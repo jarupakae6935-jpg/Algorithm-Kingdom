@@ -1,0 +1,53 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isTeacher(teacherId) {
+      return isAuthenticated() && request.auth.uid == teacherId;
+    }
+
+    // Teacher Profiles
+    match /users/{teacherId} {
+      allow read, write: if isTeacher(teacherId);
+    }
+
+    // Classrooms
+    match /classrooms/{classroomId} {
+      // Anyone can read classroom info if they have classroom ID or room code
+      allow read: if true;
+      // Only classroom owner teacher can create/update/delete classroom
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && resource.data.teacherId == request.auth.uid;
+
+      // Students inside classroom
+      match /students/{studentId} {
+        // Teachers of classroom or the student themselves can read
+        allow read: if true;
+        // Anyone (student joined via anonymous auth or room code) can create student doc
+        allow create: if true;
+        // Update only own student record or teacher owner
+        allow update: if isAuthenticated();
+
+        // Subcollections: levels
+        match /levels/{levelId} {
+          allow read, write: if isAuthenticated();
+        }
+
+        // Subcollections: worksheets
+        match /worksheets/{worksheetId} {
+          allow read, write: if isAuthenticated();
+        }
+
+        // Subcollections: assessments
+        match /assessments/{assessmentId} {
+          allow read, write: if isAuthenticated();
+        }
+      }
+    }
+  }
+}

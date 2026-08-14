@@ -1,0 +1,6 @@
+{
+  "name": "ภารกิจพิชิตอาณาจักรอัลกอริทึม (Algorithm Adventure)",
+  "description": "ระบบเกมการเรียนรู้อัลกอริทึม ป.4 พร้อมห้องเรียน Real-time, QR Code, Dashboard ครู, ใบงาน, และ Learning Analytics",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
