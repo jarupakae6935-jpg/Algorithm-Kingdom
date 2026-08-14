@@ -3,12 +3,12 @@
 // ใส่ Firebase Configuration ที่ต้องการเชื่อมต่อจริงที่นี่
 
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyC1yjNYZQk9S19A5142hosWjPulyVeXDtQ",
+  authDomain: "algorithm-adventure-2bbec.firebaseapp.com",
+  projectId: "algorithm-adventure-2bbec",
+  storageBucket: "algorithm-adventure-2bbec.firebasestorage.app",
+  messagingSenderId: "117641746509",
+  appId: "1:117641746509:web:fb4ecef6f1fb6ae203a404"
 };
 
 // หากเรียกใช้ใน Browser

@@ -261,12 +261,23 @@ export async function findClassroomByCode(roomCode: string): Promise<Classroom |
   const { db, isLive } = initFirebase();
 
   if (isLive && db) {
-    const q = query(collection(db, 'classrooms'), where('roomCode', '==', normalizedCode));
-    const snap = await getDocs(q);
-    if (!snap.empty) {
-      return snap.docs[0].data() as Classroom;
+    try {
+      const q = query(collection(db, 'classrooms'), where('roomCode', '==', normalizedCode));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        return snap.docs[0].data() as Classroom;
+      }
+      return null;
+    } catch (err) {
+      console.warn('findClassroomByCode Firebase error, fallback to demo db:', err);
+      const demo = getDemoDB();
+      for (const cid in demo.classrooms) {
+        if (demo.classrooms[cid].roomCode.toUpperCase() === normalizedCode) {
+          return demo.classrooms[cid];
+        }
+      }
+      return null;
     }
-    return null;
   } else {
     const demo = getDemoDB();
     for (const cid in demo.classrooms) {
@@ -311,7 +322,17 @@ export async function joinClassroom(classroomId: string, studentName: string): P
   };
 
   if (isLive && db) {
-    await setDoc(doc(db, 'classrooms', classroomId, 'students', studentId), newStudent);
+    try {
+      await setDoc(doc(db, 'classrooms', classroomId, 'students', studentId), newStudent);
+    } catch (err) {
+      console.warn('joinClassroom setDoc error, saving to local demo store:', err);
+      const demo = getDemoDB();
+      if (!demo.students[classroomId]) {
+        demo.students[classroomId] = {};
+      }
+      demo.students[classroomId][studentId] = newStudent;
+      saveDemoDB(demo);
+    }
   } else {
     const demo = getDemoDB();
     if (!demo.students[classroomId]) {
@@ -329,13 +350,23 @@ export function subscribeToClassroom(classroomId: string, callback: (classroom: 
   const { db, isLive } = initFirebase();
 
   if (isLive && db) {
-    const unsub = onSnapshot(doc(db, 'classrooms', classroomId), (snap) => {
-      if (snap.exists()) {
-        callback(snap.data() as Classroom);
-      } else {
-        callback(null);
+    const unsub = onSnapshot(
+      doc(db, 'classrooms', classroomId),
+      (snap) => {
+        if (snap.exists()) {
+          callback(snap.data() as Classroom);
+        } else {
+          // If not found in live db, check demo db
+          const demo = getDemoDB();
+          callback(demo.classrooms[classroomId] || null);
+        }
+      },
+      (error) => {
+        console.warn('Firestore subscribeToClassroom error (falling back to demo db):', error);
+        const demo = getDemoDB();
+        callback(demo.classrooms[classroomId] || null);
       }
-    });
+    );
     return unsub;
   } else {
     const update = () => {
@@ -356,13 +387,30 @@ export function subscribeToStudents(classroomId: string, callback: (students: St
 
   if (isLive && db) {
     const colRef = collection(db, 'classrooms', classroomId, 'students');
-    const unsub = onSnapshot(colRef, (snap) => {
-      const list: Student[] = [];
-      snap.forEach((doc) => {
-        list.push(doc.data() as Student);
-      });
-      callback(list);
-    });
+    const unsub = onSnapshot(
+      colRef,
+      (snap) => {
+        const list: Student[] = [];
+        snap.forEach((doc) => {
+          list.push(doc.data() as Student);
+        });
+        if (list.length > 0) {
+          callback(list);
+        } else {
+          // Fallback to local demo students if empty
+          const demo = getDemoDB();
+          const stdMap = demo.students[classroomId] || {};
+          const localList = Object.values(stdMap);
+          callback(localList);
+        }
+      },
+      (error) => {
+        console.warn('Firestore subscribeToStudents error (falling back to demo db):', error);
+        const demo = getDemoDB();
+        const stdMap = demo.students[classroomId] || {};
+        callback(Object.values(stdMap));
+      }
+    );
     return unsub;
   } else {
     const update = () => {
@@ -388,30 +436,51 @@ export async function saveStudentLevelResult(
   const { db, isLive } = initFirebase();
 
   if (isLive && db) {
-    const studentRef = doc(db, 'classrooms', classroomId, 'students', studentId);
-    const snap = await getDoc(studentRef);
-    if (snap.exists()) {
-      const current = snap.data() as Student;
-      const levels = { ...current.levels, [result.levelId]: result };
+    try {
+      const studentRef = doc(db, 'classrooms', classroomId, 'students', studentId);
+      const snap = await getDoc(studentRef);
+      if (snap.exists()) {
+        const current = snap.data() as Student;
+        const levels = { ...current.levels, [result.levelId]: result };
 
-      // Calculate totals
-      let total = 0;
-      let count = 0;
-      for (const k in levels) {
-        if (levels[k].completed) {
-          total += levels[k].score;
-          count++;
+        let total = 0;
+        let count = 0;
+        for (const k in levels) {
+          if (levels[k].completed) {
+            total += levels[k].score;
+            count++;
+          }
         }
-      }
-      const progress = Math.min(100, Math.round((count / 12) * 100));
+        const progress = Math.min(100, Math.round((count / 12) * 100));
 
-      await updateDoc(studentRef, {
-        levels: levels,
-        totalScore: total,
-        completedLevelsCount: count,
-        progressPercentage: progress,
-        status: count >= 12 ? 'completed' : 'playing'
-      });
+        await updateDoc(studentRef, {
+          levels: levels,
+          totalScore: total,
+          completedLevelsCount: count,
+          progressPercentage: progress,
+          status: count >= 12 ? 'completed' : 'playing'
+        });
+      }
+    } catch (err) {
+      console.warn('saveStudentLevelResult live error, falling back to demo db:', err);
+      const demo = getDemoDB();
+      if (demo.students[classroomId]?.[studentId]) {
+        const st = demo.students[classroomId][studentId];
+        st.levels[result.levelId] = result;
+        let total = 0;
+        let count = 0;
+        for (const k in st.levels) {
+          if (st.levels[k].completed) {
+            total += st.levels[k].score;
+            count++;
+          }
+        }
+        st.totalScore = total;
+        st.completedLevelsCount = count;
+        st.progressPercentage = Math.min(100, Math.round((count / 12) * 100));
+        st.status = count >= 12 ? 'completed' : 'playing';
+        saveDemoDB(demo);
+      }
     }
   } else {
     const demo = getDemoDB();
@@ -447,32 +516,51 @@ export async function saveAssessmentResult(
   const { db, isLive } = initFirebase();
 
   if (isLive && db) {
-    const studentRef = doc(db, 'classrooms', classroomId, 'students', studentId);
-    const snap = await getDoc(studentRef);
-    if (snap.exists()) {
-      const st = snap.data() as Student;
-      const assessments = { ...st.assessments };
-      let pre = st.preTestScore;
-      let post = st.postTestScore;
+    try {
+      const studentRef = doc(db, 'classrooms', classroomId, 'students', studentId);
+      const snap = await getDoc(studentRef);
+      if (snap.exists()) {
+        const st = snap.data() as Student;
+        const assessments = { ...st.assessments };
+        let pre = st.preTestScore;
+        let post = st.postTestScore;
 
-      if (type === 'pretest') {
-        assessments.preTestScore = score;
-        assessments.preTestCompletedAt = new Date().toISOString();
-        pre = score;
-      } else {
-        assessments.postTestScore = score;
-        assessments.postTestCompletedAt = new Date().toISOString();
-        post = score;
+        if (type === 'pretest') {
+          assessments.preTestScore = score;
+          assessments.preTestCompletedAt = new Date().toISOString();
+          pre = score;
+        } else {
+          assessments.postTestScore = score;
+          assessments.postTestCompletedAt = new Date().toISOString();
+          post = score;
+        }
+
+        const gain = post !== undefined && pre !== undefined ? post - pre : undefined;
+
+        await updateDoc(studentRef, {
+          assessments: assessments,
+          preTestScore: pre,
+          postTestScore: post,
+          learningGain: gain
+        });
       }
-
-      const gain = post !== undefined && pre !== undefined ? post - pre : undefined;
-
-      await updateDoc(studentRef, {
-        assessments: assessments,
-        preTestScore: pre,
-        postTestScore: post,
-        learningGain: gain
-      });
+    } catch (err) {
+      console.warn('saveAssessmentResult live error, fallback to demo db:', err);
+      const demo = getDemoDB();
+      if (demo.students[classroomId]?.[studentId]) {
+        const st = demo.students[classroomId][studentId];
+        if (type === 'pretest') {
+          st.preTestScore = score;
+          st.assessments.preTestScore = score;
+        } else {
+          st.postTestScore = score;
+          st.assessments.postTestScore = score;
+        }
+        if (st.postTestScore !== undefined && st.preTestScore !== undefined) {
+          st.learningGain = st.postTestScore - st.preTestScore;
+        }
+        saveDemoDB(demo);
+      }
     }
   } else {
     const demo = getDemoDB();
@@ -502,12 +590,22 @@ export async function saveWorksheetSubmission(
   const { db, isLive } = initFirebase();
 
   if (isLive && db) {
-    const studentRef = doc(db, 'classrooms', classroomId, 'students', studentId);
-    const snap = await getDoc(studentRef);
-    if (snap.exists()) {
-      const st = snap.data() as Student;
-      const worksheets = { ...st.worksheets, [submission.worksheetId]: submission };
-      await updateDoc(studentRef, { worksheets });
+    try {
+      const studentRef = doc(db, 'classrooms', classroomId, 'students', studentId);
+      const snap = await getDoc(studentRef);
+      if (snap.exists()) {
+        const st = snap.data() as Student;
+        const worksheets = { ...st.worksheets, [submission.worksheetId]: submission };
+        await updateDoc(studentRef, { worksheets });
+      }
+    } catch (err) {
+      console.warn('saveWorksheetSubmission live error, fallback to demo db:', err);
+      const demo = getDemoDB();
+      if (demo.students[classroomId]?.[studentId]) {
+        const st = demo.students[classroomId][studentId];
+        st.worksheets[submission.worksheetId] = submission;
+        saveDemoDB(demo);
+      }
     }
   } else {
     const demo = getDemoDB();
@@ -530,15 +628,27 @@ export async function gradeWorksheetSubmission(
   const { db, isLive } = initFirebase();
 
   if (isLive && db) {
-    const studentRef = doc(db, 'classrooms', classroomId, 'students', studentId);
-    const snap = await getDoc(studentRef);
-    if (snap.exists()) {
-      const st = snap.data() as Student;
-      if (st.worksheets[worksheetId]) {
-        st.worksheets[worksheetId].score = score;
-        st.worksheets[worksheetId].feedback = feedback;
-        st.worksheets[worksheetId].status = 'graded';
-        await updateDoc(studentRef, { worksheets: st.worksheets });
+    try {
+      const studentRef = doc(db, 'classrooms', classroomId, 'students', studentId);
+      const snap = await getDoc(studentRef);
+      if (snap.exists()) {
+        const st = snap.data() as Student;
+        if (st.worksheets[worksheetId]) {
+          st.worksheets[worksheetId].score = score;
+          st.worksheets[worksheetId].feedback = feedback;
+          st.worksheets[worksheetId].status = 'graded';
+          await updateDoc(studentRef, { worksheets: st.worksheets });
+        }
+      }
+    } catch (err) {
+      console.warn('gradeWorksheetSubmission live error, fallback to demo db:', err);
+      const demo = getDemoDB();
+      if (demo.students[classroomId]?.[studentId]?.worksheets[worksheetId]) {
+        const ws = demo.students[classroomId][studentId].worksheets[worksheetId];
+        ws.score = score;
+        ws.feedback = feedback;
+        ws.status = 'graded';
+        saveDemoDB(demo);
       }
     }
   } else {
@@ -568,8 +678,19 @@ export async function saveStudentReflection(
   };
 
   if (isLive && db) {
-    const studentRef = doc(db, 'classrooms', classroomId, 'students', studentId);
-    await updateDoc(studentRef, data);
+    try {
+      const studentRef = doc(db, 'classrooms', classroomId, 'students', studentId);
+      await updateDoc(studentRef, data);
+    } catch (err) {
+      console.warn('saveStudentReflection live error, fallback to demo db:', err);
+      const demo = getDemoDB();
+      if (demo.students[classroomId]?.[studentId]) {
+        const st = demo.students[classroomId][studentId];
+        st.reflection = { ...reflection, completedAt: new Date().toISOString() };
+        st.certificateId = certId;
+        saveDemoDB(demo);
+      }
+    }
   } else {
     const demo = getDemoDB();
     if (demo.students[classroomId]?.[studentId]) {
@@ -592,8 +713,17 @@ export async function saveObservationNotes(
   const { db, isLive } = initFirebase();
 
   if (isLive && db) {
-    const studentRef = doc(db, 'classrooms', classroomId, 'students', studentId);
-    await updateDoc(studentRef, { observation: obs });
+    try {
+      const studentRef = doc(db, 'classrooms', classroomId, 'students', studentId);
+      await updateDoc(studentRef, { observation: obs });
+    } catch (err) {
+      console.warn('saveObservationNotes live error, fallback to demo db:', err);
+      const demo = getDemoDB();
+      if (demo.students[classroomId]?.[studentId]) {
+        demo.students[classroomId][studentId].observation = obs;
+        saveDemoDB(demo);
+      }
+    }
   } else {
     const demo = getDemoDB();
     if (demo.students[classroomId]?.[studentId]) {
@@ -618,12 +748,22 @@ export async function sendTeacherFeedback(
   };
 
   if (isLive && db) {
-    const studentRef = doc(db, 'classrooms', classroomId, 'students', studentId);
-    const snap = await getDoc(studentRef);
-    if (snap.exists()) {
-      const st = snap.data() as Student;
-      const list = st.feedbacks ? [...st.feedbacks, feedback] : [feedback];
-      await updateDoc(studentRef, { feedbacks: list });
+    try {
+      const studentRef = doc(db, 'classrooms', classroomId, 'students', studentId);
+      const snap = await getDoc(studentRef);
+      if (snap.exists()) {
+        const st = snap.data() as Student;
+        const list = st.feedbacks ? [...st.feedbacks, feedback] : [feedback];
+        await updateDoc(studentRef, { feedbacks: list });
+      }
+    } catch (err) {
+      console.warn('sendTeacherFeedback live error, fallback to demo db:', err);
+      const demo = getDemoDB();
+      if (demo.students[classroomId]?.[studentId]) {
+        const st = demo.students[classroomId][studentId];
+        st.feedbacks = st.feedbacks ? [...st.feedbacks, feedback] : [feedback];
+        saveDemoDB(demo);
+      }
     }
   } else {
     const demo = getDemoDB();
@@ -646,12 +786,22 @@ export async function sendAnnouncement(classroomId: string, title: string, messa
   };
 
   if (isLive && db) {
-    const roomRef = doc(db, 'classrooms', classroomId);
-    const snap = await getDoc(roomRef);
-    if (snap.exists()) {
-      const current = snap.data() as Classroom;
-      const list = current.announcements ? [ann, ...current.announcements] : [ann];
-      await updateDoc(roomRef, { announcements: list });
+    try {
+      const roomRef = doc(db, 'classrooms', classroomId);
+      const snap = await getDoc(roomRef);
+      if (snap.exists()) {
+        const current = snap.data() as Classroom;
+        const list = current.announcements ? [ann, ...current.announcements] : [ann];
+        await updateDoc(roomRef, { announcements: list });
+      }
+    } catch (err) {
+      console.warn('sendAnnouncement live error, fallback to demo db:', err);
+      const demo = getDemoDB();
+      if (demo.classrooms[classroomId]) {
+        const room = demo.classrooms[classroomId];
+        room.announcements = room.announcements ? [ann, ...room.announcements] : [ann];
+        saveDemoDB(demo);
+      }
     }
   } else {
     const demo = getDemoDB();
@@ -671,12 +821,24 @@ export async function updateClassroomSettings(
   const { db, isLive } = initFirebase();
 
   if (isLive && db) {
-    const roomRef = doc(db, 'classrooms', classroomId);
-    const snap = await getDoc(roomRef);
-    if (snap.exists()) {
-      const room = snap.data() as Classroom;
-      const newSettings = { ...room.settings, ...settings };
-      await updateDoc(roomRef, { settings: newSettings });
+    try {
+      const roomRef = doc(db, 'classrooms', classroomId);
+      const snap = await getDoc(roomRef);
+      if (snap.exists()) {
+        const room = snap.data() as Classroom;
+        const newSettings = { ...room.settings, ...settings };
+        await updateDoc(roomRef, { settings: newSettings });
+      }
+    } catch (err) {
+      console.warn('updateClassroomSettings live error, fallback to demo db:', err);
+      const demo = getDemoDB();
+      if (demo.classrooms[classroomId]) {
+        demo.classrooms[classroomId].settings = {
+          ...demo.classrooms[classroomId].settings,
+          ...settings
+        };
+        saveDemoDB(demo);
+      }
     }
   } else {
     const demo = getDemoDB();
