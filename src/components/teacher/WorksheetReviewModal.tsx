@@ -50,7 +50,9 @@ export const WorksheetReviewModal: React.FC<Props> = ({
         {/* Worksheet Selector Bar */}
         <div className="flex gap-2 overflow-x-auto pb-2">
           {WORKSHEETS.map((w) => {
-            const hasSub = !!student.worksheets?.[w.id]?.completed;
+            const sub = student.worksheets?.[w.id];
+            const hasCompleted = !!sub?.completed;
+            const hasDraft = !hasCompleted && Object.keys(sub?.answers || {}).length > 0;
             const isSelected = selectedWsId === w.id;
             return (
               <button
@@ -64,12 +66,14 @@ export const WorksheetReviewModal: React.FC<Props> = ({
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition border ${
                   isSelected
                     ? 'bg-indigo-600 text-white border-cyan-400'
-                    : hasSub
+                    : hasCompleted
                     ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/50'
+                    : hasDraft
+                    ? 'bg-amber-950/40 text-amber-300 border-amber-800/50'
                     : 'bg-slate-800 text-slate-400 border-slate-700'
                 }`}
               >
-                ใบงานที่ {w.id} {hasSub ? '✓' : ''}
+                ใบงานที่ {w.id} {hasCompleted ? '✓' : hasDraft ? '✎' : ''}
               </button>
             );
           })}
@@ -77,31 +81,55 @@ export const WorksheetReviewModal: React.FC<Props> = ({
 
         {/* Selected Worksheet Details & Student Answers */}
         <div className="bg-slate-950/80 p-5 rounded-2xl border border-slate-800 space-y-4">
-          <div>
-            <h3 className="text-base font-bold text-amber-300">{wsDef.title}</h3>
-            <p className="text-xs text-slate-400">{wsDef.description}</p>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h3 className="text-base font-bold text-amber-300">{wsDef.title}</h3>
+              <p className="text-xs text-slate-400">{wsDef.description}</p>
+            </div>
+            {currentSub?.completed ? (
+              <span className="text-xs bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-3 py-1 rounded-full font-black">
+                🟢 ส่งใบงานแล้ว
+              </span>
+            ) : Object.keys(currentSub?.answers || {}).length > 0 ? (
+              <span className="text-xs bg-amber-500/20 text-amber-300 border border-amber-500/40 px-3 py-1 rounded-full font-black">
+                🟡 มีงานค้างไว้ (แบบร่าง {Object.keys(currentSub?.answers || {}).length} ข้อ)
+              </span>
+            ) : (
+              <span className="text-xs bg-slate-800 text-slate-400 border border-slate-700 px-3 py-1 rounded-full font-black">
+                ⚪ ยังไม่เริ่มทำ
+              </span>
+            )}
           </div>
 
-          {!currentSub?.completed ? (
-            <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-center text-xs text-slate-400">
-              นักเรียนยังไม่ได้ส่งใบงานที่ {selectedWsId}
+          {!currentSub || Object.keys(currentSub.answers || {}).length === 0 ? (
+            <div className="p-6 bg-slate-900 border border-slate-800 rounded-xl text-center text-xs text-slate-400">
+              นักเรียนยังไม่ได้เริ่มทำใบงานที่ {selectedWsId}
             </div>
           ) : (
             <div className="space-y-3">
-              {wsDef.questions.map((q, idx) => (
-                <div key={q.id} className="p-3 bg-slate-900 rounded-xl border border-slate-800 text-xs space-y-1">
-                  <span className="font-bold text-slate-300">{idx + 1}. {q.prompt}</span>
-                  <div className="text-cyan-300 font-semibold p-2 bg-slate-950 rounded-lg border border-slate-800 mt-1">
-                    คำตอบของนักเรียน: "{currentSub.answers?.[q.id] || 'ไม่มีคำตอบ'}"
+              {wsDef.questions.map((q, idx) => {
+                const ans = currentSub.answers?.[q.id];
+                return (
+                  <div key={q.id} className="p-3 bg-slate-900 rounded-xl border border-slate-800 text-xs space-y-1">
+                    <span className="font-bold text-slate-300">{idx + 1}. {q.prompt}</span>
+                    <div className={`font-semibold p-2.5 rounded-lg border mt-1 ${
+                      ans !== undefined && ans !== ''
+                        ? 'bg-slate-950 text-cyan-300 border-slate-800'
+                        : 'bg-slate-950/50 text-slate-500 border-dashed border-slate-800 italic'
+                    }`}>
+                      {ans !== undefined && ans !== '' ? `คำตอบของนักเรียน: "${ans}"` : '(ยังไม่ได้ตอบข้อนี้)'}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {/* Teacher Grading Form */}
               <form onSubmit={handleGrade} className="pt-4 border-t border-slate-800 space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">ให้คะแนนใบงาน (เต็ม 10)</label>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      {currentSub.completed ? 'ให้คะแนนใบงาน (เต็ม 10)' : 'ให้คะแนน/ประเมินเบื้องต้น (เต็ม 10)'}
+                    </label>
                     <input
                       type="number"
                       min={0}
@@ -112,12 +140,12 @@ export const WorksheetReviewModal: React.FC<Props> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">คำแนะนำ / ข้อเสนอแนะ</label>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">คำแนะนำ / ข้อเสนอแนะให้นักเรียน</label>
                     <input
                       type="text"
                       value={feedback}
                       onChange={(e) => setFeedback(e.target.value)}
-                      placeholder="เช่น อธิบายขั้นตอนได้ดีมาก!"
+                      placeholder="เช่น ทำได้ดีมาก หรือ อย่าลืมทำข้อ 3 ให้ครบนะ"
                       className="w-full px-3 py-2 bg-slate-900 border border-slate-700 focus:border-cyan-400 rounded-xl text-xs text-white outline-none"
                     />
                   </div>
@@ -127,7 +155,7 @@ export const WorksheetReviewModal: React.FC<Props> = ({
                   type="submit"
                   className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black rounded-xl text-xs transition flex items-center justify-center gap-1.5"
                 >
-                  <CheckCircle className="w-4 h-4" /> บันทึกผลการตรวจใบงาน
+                  <CheckCircle className="w-4 h-4" /> บันทึกผลการตรวจ/ข้อเสนอแนะ
                 </button>
                 {saved && <div className="text-[11px] text-emerald-400 text-center font-bold">บันทึกเรียบร้อย!</div>}
               </form>

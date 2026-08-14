@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { TeacherUser, Classroom, Student } from '../../types';
-import { createClassroom, subscribeToStudents, sendAnnouncement } from '../../firebase/db';
+import { TeacherUser, Classroom, Student, WorksheetSubmission } from '../../types';
+import { createClassroom, subscribeToStudents, sendAnnouncement, subscribeToTeacherClassrooms, addStudentToClassroom, removeStudentFromClassroom } from '../../firebase/db';
 import { calculateClassAnalytics } from '../../utils/analytics';
 import { exportClassroomToCSV, exportClassroomToJSON } from '../../utils/export';
 import { ClassroomLiveMonitor } from './ClassroomLiveMonitor';
@@ -9,8 +9,10 @@ import { StudentAnalyticsModal } from './StudentAnalyticsModal';
 import { WorksheetReviewModal } from './WorksheetReviewModal';
 import { ObservationModal } from './ObservationModal';
 import { ClassSettingsModal } from './ClassSettingsModal';
+import { AddStudentModal } from './AddStudentModal';
+import { DeleteStudentModal } from './DeleteStudentModal';
 import { FirebaseGuideModal } from '../FirebaseGuideModal';
-import { Plus, QrCode, Monitor, Settings, Download, FileText, Send, Eye, ShieldAlert, Sparkles, BarChart3, AlertCircle } from 'lucide-react';
+import { Plus, QrCode, Monitor, Settings, Download, FileText, Send, Eye, ShieldAlert, Sparkles, BarChart3, AlertCircle, UserPlus, UserMinus, Trash2 } from 'lucide-react';
 import { sounds } from '../../utils/audio';
 
 interface Props {
@@ -25,6 +27,8 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
 
   // Modals state
   const [showCreateClassModal, setShowCreateClassModal] = useState(false);
+  const [showAddStudentModal, setShowAddStudentModal] = useState(false);
+  const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
   const [showQrModal, setShowQrModal] = useState(false);
   const [showLiveMonitor, setShowLiveMonitor] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -40,33 +44,46 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
   // Broadcast announcement
   const [announcementMsg, setAnnouncementMsg] = useState('');
 
-  // Default initial demo classroom setup if none
+  // Subscribe to all classrooms owned by this teacher
   useEffect(() => {
-    const demoClass: Classroom = {
-      id: 'demo-class-01',
-      name: 'วิทยาการคำนวณ ป.4/1',
-      teacherId: teacher.uid,
-      teacherName: teacher.name,
-      academicYear: '2569',
-      roomCode: 'ALG4-K8P2',
-      status: 'active',
-      createdAt: new Date().toISOString(),
-      settings: {
-        maxTimePerLevel: 300,
-        maxHearts: 3,
-        enableHints: true,
-        enableTimer: true,
-        enableSound: true,
-        enableWorksheets: true,
-        allowedWorld: 3,
-        privacyMode: false,
-        isPaused: false,
-        isOpen: true
+    const unsub = subscribeToTeacherClassrooms(teacher.uid, (list) => {
+      if (list && list.length > 0) {
+        setClassrooms(list);
+        setSelectedClassroom((prev) => {
+          if (!prev) return list[0];
+          const found = list.find((c) => c.id === prev.id);
+          return found || list[0];
+        });
+      } else {
+        // Create initial default demo class if completely none exists
+        const defaultClass: Classroom = {
+          id: 'demo-class-01',
+          name: 'วิทยาการคำนวณ ป.4/1',
+          teacherId: teacher.uid,
+          teacherName: teacher.name,
+          academicYear: '2569',
+          roomCode: 'ALG4-K8P2',
+          status: 'active',
+          createdAt: new Date().toISOString(),
+          settings: {
+            maxTimePerLevel: 300,
+            maxHearts: 3,
+            enableHints: true,
+            enableTimer: true,
+            enableSound: true,
+            enableWorksheets: true,
+            allowedWorld: 3,
+            privacyMode: false,
+            isPaused: false,
+            isOpen: true
+          }
+        };
+        setClassrooms([defaultClass]);
+        setSelectedClassroom(defaultClass);
       }
-    };
-    setClassrooms([demoClass]);
-    setSelectedClassroom(demoClass);
-  }, [teacher]);
+    });
+    return () => unsub();
+  }, [teacher.uid, teacher.name]);
 
   // Subscribe to real-time student updates
   useEffect(() => {
@@ -75,14 +92,13 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
       setStudents(list);
     });
     return () => unsub();
-  }, [selectedClassroom]);
+  }, [selectedClassroom?.id]);
 
   const handleCreateClass = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClassName.trim()) return;
     sounds.playSuccess();
     const created = await createClassroom(teacher.uid, teacher.name, newClassName, newAcademicYear);
-    setClassrooms(prev => [created, ...prev]);
     setSelectedClassroom(created);
     setNewClassName('');
     setShowCreateClassModal(false);
@@ -133,30 +149,76 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
       {/* Classroom Selection & Quick Toolbar */}
       {selectedClassroom && (
         <div className="bg-white border-b-4 border-slate-200 p-6 rounded-3xl space-y-4 shadow-sm">
+          {/* Multiple Classrooms Tabs switcher */}
+          <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black text-slate-400 uppercase tracking-wider mr-1">
+                ห้องเรียนของคุณ ({classrooms.length}):
+              </span>
+              {classrooms.map((c) => {
+                const isActive = selectedClassroom.id === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => {
+                      setSelectedClassroom(c);
+                      sounds.playClick();
+                    }}
+                    className={`px-3.5 py-1.5 rounded-2xl text-xs font-black transition flex items-center gap-2 border-2 shrink-0 ${
+                      isActive
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                        : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                    }`}
+                  >
+                    <span>{c.name}</span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded-md font-extrabold ${
+                        isActive ? 'bg-indigo-700/80 text-white' : 'bg-slate-200 text-slate-600'
+                      }`}
+                    >
+                      {c.roomCode}
+                    </span>
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => {
+                  sounds.playClick();
+                  setShowCreateClassModal(true);
+                }}
+                className="px-3 py-1.5 rounded-2xl text-xs font-black text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border-2 border-dashed border-indigo-300 transition flex items-center gap-1 shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" /> เพิ่มห้องใหม่
+              </button>
+            </div>
+          </div>
+
           <div className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-slate-100 pb-4">
             <div className="flex items-center gap-3">
-              <select
-                value={selectedClassroom.id}
-                onChange={(e) => {
-                  const target = classrooms.find(c => c.id === e.target.value);
-                  if (target) setSelectedClassroom(target);
-                }}
-                className="px-4 py-2.5 bg-slate-50 border-2 border-slate-200 text-indigo-900 font-black text-sm rounded-2xl outline-none"
-              >
-                {classrooms.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} (รหัส: {c.roomCode})
-                  </option>
-                ))}
-              </select>
-
-              <div className="text-xs text-slate-500 font-bold">
-                รหัสเข้าร่วม: <strong className="text-indigo-600 text-base font-black ml-1">{selectedClassroom.roomCode}</strong>
+              <div>
+                <h2 className="text-lg font-black text-indigo-950 flex items-center gap-2">
+                  🏫 {selectedClassroom.name}
+                </h2>
+                <div className="text-xs text-slate-500 font-bold flex items-center gap-2 mt-0.5">
+                  <span>ปีการศึกษา {selectedClassroom.academicYear}</span>
+                  <span>•</span>
+                  <span>รหัสเข้าร่วมห้อง: <strong className="text-indigo-600 text-sm font-black ml-0.5">{selectedClassroom.roomCode}</strong></span>
+                </div>
               </div>
             </div>
 
             {/* Quick Action Buttons */}
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => {
+                  sounds.playClick();
+                  setShowAddStudentModal(true);
+                }}
+                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl text-xs transition flex items-center gap-1.5 shadow-sm"
+              >
+                <UserPlus className="w-4 h-4" /> เพิ่มนักเรียน
+              </button>
+
               <button
                 onClick={() => setShowQrModal(true)}
                 className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-black rounded-2xl text-xs transition flex items-center gap-1.5"
@@ -305,9 +367,22 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
 
       {/* Main Student Data Table */}
       <div className="bg-white border-b-4 border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b-2 border-slate-100 pb-3">
-          <h3 className="text-lg font-black text-indigo-900">ตารางแสดงพัฒนาการและคะแนน Real-time</h3>
-          <span className="text-xs font-bold text-slate-400">{students.length} รายชื่อ</span>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-black text-indigo-900">ตารางแสดงพัฒนาการและคะแนน Real-time</h3>
+            <span className="text-xs bg-indigo-50 text-indigo-700 font-extrabold px-2.5 py-0.5 rounded-full border border-indigo-100">
+              {students.length} คน
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              sounds.playClick();
+              setShowAddStudentModal(true);
+            }}
+            className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-black rounded-xl text-xs transition border border-indigo-200 flex items-center gap-1.5"
+          >
+            <UserPlus className="w-3.5 h-3.5" /> เพิ่มนักเรียนเข้าห้อง
+          </button>
         </div>
 
         <div className="overflow-x-auto">
@@ -328,7 +403,7 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
               {students.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="p-8 text-center text-slate-400 font-bold">
-                    ยังไม่มีนักเรียนเข้าร่วมห้องเรียน กรุณาแชร์ QR Code เพื่อให้นักเรียนเข้าร่วม
+                    ยังไม่มีนักเรียนเข้าร่วมห้องเรียน กรุณากด <strong>"+ เพิ่มนักเรียน"</strong> หรือแชร์ QR Code เพื่อให้นักเรียนเข้าร่วม
                   </td>
                 </tr>
               ) : (
@@ -360,17 +435,41 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
                           >
                             รายงาน
                           </button>
-                          <button
-                            onClick={() => setSelectedStudentForWs(std)}
-                            className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-black rounded-lg transition border border-amber-200"
-                          >
-                            ใบงาน
-                          </button>
+                          {(() => {
+                            const completedWs = (Object.values(std.worksheets || {}) as WorksheetSubmission[]).filter(w => w.completed).length;
+                            const draftWs = (Object.values(std.worksheets || {}) as WorksheetSubmission[]).filter(w => !w.completed && Object.keys(w.answers || {}).length > 0).length;
+                            return (
+                              <button
+                                onClick={() => setSelectedStudentForWs(std)}
+                                className={`px-2.5 py-1 text-[11px] font-black rounded-lg transition border flex items-center gap-1 ${
+                                  draftWs > 0
+                                    ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300'
+                                    : completedWs > 0
+                                    ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+                                    : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
+                                }`}
+                              >
+                                <span>ใบงาน</span>
+                                {completedWs > 0 && <span className="text-[10px] bg-emerald-200 text-emerald-900 px-1 rounded font-black">✓{completedWs}</span>}
+                                {draftWs > 0 && <span className="text-[10px] bg-amber-200 text-amber-900 px-1 rounded font-black">✎{draftWs}</span>}
+                              </button>
+                            );
+                          })()}
                           <button
                             onClick={() => setSelectedStudentForObs(std)}
                             className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 text-[11px] font-black rounded-lg transition border border-teal-200"
                           >
                             สังเกต
+                          </button>
+                          <button
+                            onClick={() => {
+                              sounds.playClick();
+                              setStudentToDelete(std);
+                            }}
+                            title="ลบนักเรียนออกจากห้องเรียน"
+                            className="p-1 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-800 rounded-lg transition border border-rose-200"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
@@ -481,6 +580,30 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
           student={selectedStudentForObs}
           classroom={selectedClassroom}
           onClose={() => setSelectedStudentForObs(null)}
+        />
+      )}
+
+      {/* Add Student Modal */}
+      {showAddStudentModal && selectedClassroom && (
+        <AddStudentModal
+          classroomName={selectedClassroom.name}
+          onAddStudent={async (name) => {
+            await addStudentToClassroom(selectedClassroom.id, name);
+          }}
+          onClose={() => setShowAddStudentModal(false)}
+        />
+      )}
+
+      {/* Delete Student Modal */}
+      {studentToDelete && selectedClassroom && (
+        <DeleteStudentModal
+          student={studentToDelete}
+          classroomName={selectedClassroom.name}
+          onConfirm={async () => {
+            await removeStudentFromClassroom(selectedClassroom.id, studentToDelete.id);
+            setStudentToDelete(null);
+          }}
+          onClose={() => setStudentToDelete(null)}
         />
       )}
 

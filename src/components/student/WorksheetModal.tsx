@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { WORKSHEETS } from '../../data/worksheets';
 import { WorksheetSubmission } from '../../types';
-import { X, Send, CheckCircle2, FileText, HelpCircle } from 'lucide-react';
+import { X, Send, CheckCircle2, FileText, Save, Bookmark, Clock } from 'lucide-react';
 import { sounds } from '../../utils/audio';
 
 interface Props {
@@ -22,9 +22,26 @@ export const WorksheetModal: React.FC<Props> = ({
     currentSubmission?.answers || {}
   );
   const [submitted, setSubmitted] = useState(!!currentSubmission?.completed);
+  const [draftSavedToast, setDraftSavedToast] = useState(false);
+
+  const answeredCount = Object.values(answers).filter(v => v !== undefined && v !== '').length;
 
   const handleInputChange = (qId: string, val: any) => {
     setAnswers(prev => ({ ...prev, [qId]: val }));
+  };
+
+  const handleSaveDraft = () => {
+    sounds.playClick();
+    const draftSubmission: WorksheetSubmission = {
+      worksheetId: ws.id,
+      answers,
+      completed: false,
+      status: 'draft',
+      updatedAt: new Date().toISOString()
+    };
+    onSubmit(draftSubmission);
+    setDraftSavedToast(true);
+    setTimeout(() => setDraftSavedToast(false), 2500);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -34,7 +51,9 @@ export const WorksheetModal: React.FC<Props> = ({
       worksheetId: ws.id,
       answers,
       completed: true,
-      status: currentSubmission?.status || 'pending',
+      status: currentSubmission?.status === 'graded' ? 'graded' : 'pending',
+      score: currentSubmission?.score,
+      feedback: currentSubmission?.feedback,
       updatedAt: new Date().toISOString()
     };
     setSubmitted(true);
@@ -56,7 +75,13 @@ export const WorksheetModal: React.FC<Props> = ({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={() => {
+              // Auto-save draft on close if student has answers but not submitted
+              if (!submitted && answeredCount > 0) {
+                handleSaveDraft();
+              }
+              onClose();
+            }}
             className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition"
           >
             <X className="w-5 h-5" />
@@ -64,10 +89,31 @@ export const WorksheetModal: React.FC<Props> = ({
         </div>
 
         {/* Status notice */}
-        {submitted && (
+        {submitted ? (
           <div className="p-3 bg-emerald-500/20 border border-emerald-500/40 rounded-2xl text-emerald-300 text-xs font-semibold flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4" />
             คุณได้ส่งใบงานนี้แล้ว! คุณครูสามารถเปิดตรวจคำตอบของนักเรียนได้
+          </div>
+        ) : answeredCount > 0 ? (
+          <div className="p-3 bg-amber-500/20 border border-amber-500/40 rounded-2xl text-amber-300 text-xs font-semibold flex items-center justify-between gap-2">
+            <span className="flex items-center gap-2">
+              <Clock className="w-4 h-4" />
+              ตอบแล้ว {answeredCount} จาก {ws.questions.length} ข้อ (บันทึกงานค้างไว้ได้ตลอดเวลา)
+            </span>
+            <button
+              type="button"
+              onClick={handleSaveDraft}
+              className="text-[11px] bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 font-black px-2.5 py-1 rounded-xl border border-amber-400/40 transition"
+            >
+              บันทึกแบบร่าง
+            </button>
+          </div>
+        ) : null}
+
+        {draftSavedToast && (
+          <div className="p-3 bg-indigo-500/20 border border-indigo-500/40 rounded-2xl text-indigo-200 text-xs font-black flex items-center gap-2 animate-bounce">
+            <Bookmark className="w-4 h-4 text-indigo-400" />
+            💾 บันทึกงานค้างไว้เรียบร้อยแล้ว! สามารถปิดและกลับมาทำต่อเมื่อไหร่ก็ได้
           </div>
         )}
 
@@ -75,9 +121,16 @@ export const WorksheetModal: React.FC<Props> = ({
         <form onSubmit={handleSubmit} className="space-y-6">
           {ws.questions.map((q, idx) => (
             <div key={q.id} className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700 space-y-3">
-              <label className="block text-sm font-bold text-slate-200">
-                {idx + 1}. {q.prompt}
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="block text-sm font-bold text-slate-200">
+                  {idx + 1}. {q.prompt}
+                </label>
+                {answers[q.id] !== undefined && answers[q.id] !== '' && (
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-md font-bold">
+                    ตอบแล้ว
+                  </span>
+                )}
+              </div>
 
               {q.options ? (
                 <div className="space-y-2">
@@ -114,13 +167,25 @@ export const WorksheetModal: React.FC<Props> = ({
             </div>
           ))}
 
-          <button
-            type="submit"
-            className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black rounded-2xl shadow-lg transition flex items-center justify-center gap-2 text-sm"
-          >
-            <Send className="w-4 h-4" />
-            บันทึกและส่งใบงาน
-          </button>
+          {/* Action Buttons: Save Draft (งานค้าง) vs Final Submit */}
+          <div className="flex flex-col sm:flex-row gap-3 pt-2">
+            <button
+              type="button"
+              onClick={handleSaveDraft}
+              className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-400/30 font-black rounded-2xl transition flex items-center justify-center gap-2 text-xs shadow-md"
+            >
+              <Save className="w-4 h-4 text-amber-400" />
+              บันทึกงานค้างไว้ (แบบร่าง)
+            </button>
+
+            <button
+              type="submit"
+              className="flex-1 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black rounded-2xl shadow-lg transition flex items-center justify-center gap-2 text-xs"
+            >
+              <Send className="w-4 h-4" />
+              {submitted ? 'อัปเดตการส่งใบงาน' : 'ส่งใบงานให้ครูตรวจ'}
+            </button>
+          </div>
         </form>
       </div>
     </div>

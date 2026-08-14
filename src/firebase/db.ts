@@ -4,6 +4,7 @@ import {
   setDoc,
   getDoc,
   getDocs,
+  deleteDoc,
   onSnapshot,
   updateDoc,
   query,
@@ -21,7 +22,8 @@ import {
   StudentAssessment,
   StudentObservation,
   TeacherFeedback,
-  ClassroomAnnouncement
+  ClassroomAnnouncement,
+  CommandType
 } from '../types';
 
 // BroadcastChannel for Demo Mode real-time tab-to-tab synchronization
@@ -266,19 +268,109 @@ export async function createClassroom(
       await setDoc(doc(db, 'classrooms', classroomId), classroom);
     } catch (err) {
       console.warn('createClassroom setDoc error, saving to local demo store:', err);
-      const demo = getDemoDB();
-      demo.classrooms[classroomId] = classroom;
-      demo.students[classroomId] = {};
-      saveDemoDB(demo);
     }
-  } else {
-    const demo = getDemoDB();
-    demo.classrooms[classroomId] = classroom;
-    demo.students[classroomId] = {};
-    saveDemoDB(demo);
   }
 
+  // Always keep in local demo DB as well to prevent any loss of previous rooms
+  const demo = getDemoDB();
+  demo.classrooms[classroomId] = classroom;
+  if (!demo.students[classroomId]) {
+    demo.students[classroomId] = {};
+  }
+  saveDemoDB(demo);
+
   return classroom;
+}
+
+// Fetch all classrooms for a specific teacher
+export async function fetchTeacherClassrooms(teacherId: string): Promise<Classroom[]> {
+  const { db, isLive } = initFirebase();
+  const rooms: Classroom[] = [];
+
+  if (isLive && db) {
+    try {
+      const q = query(collection(db, 'classrooms'), where('teacherId', '==', teacherId));
+      const snap = await getDocs(q);
+      snap.forEach(d => {
+        rooms.push(d.data() as Classroom);
+      });
+    } catch (err) {
+      console.warn('fetchTeacherClassrooms Firebase error, fallback to demo store:', err);
+    }
+  }
+
+  // Also merge with local classrooms created by this teacher or demo classes
+  const demo = getDemoDB();
+  for (const cid in demo.classrooms) {
+    const c = demo.classrooms[cid];
+    if (c.teacherId === teacherId || teacherId === 'teacher-demo-01' || !rooms.some(r => r.id === c.id)) {
+      if (!rooms.some(r => r.id === c.id)) {
+        rooms.push(c);
+      }
+    }
+  }
+
+  // Sort by createdAt descending
+  rooms.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return rooms;
+}
+
+// Subscribe to Teacher's Classrooms in Real-time
+export function subscribeToTeacherClassrooms(
+  teacherId: string,
+  callback: (classrooms: Classroom[]) => void
+): () => void {
+  const { db, isLive } = initFirebase();
+
+  // Trigger initial list from local immediately
+  const initial = async () => {
+    const list = await fetchTeacherClassrooms(teacherId);
+    callback(list);
+  };
+  initial();
+
+  if (isLive && db) {
+    try {
+      const q = query(collection(db, 'classrooms'), where('teacherId', '==', teacherId));
+      const unsubscribe = onSnapshot(
+        q,
+        (snap) => {
+          const liveRooms: Classroom[] = [];
+          snap.forEach(d => {
+            liveRooms.push(d.data() as Classroom);
+          });
+          // Merge with any local demo rooms
+          const demo = getDemoDB();
+          for (const cid in demo.classrooms) {
+            const c = demo.classrooms[cid];
+            if ((c.teacherId === teacherId || teacherId === 'teacher-demo-01') && !liveRooms.some(r => r.id === c.id)) {
+              liveRooms.push(c);
+            }
+          }
+          liveRooms.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          callback(liveRooms);
+        },
+        (error) => {
+          console.warn('subscribeToTeacherClassrooms error, using local demo store:', error);
+          initial();
+        }
+      );
+      return unsubscribe;
+    } catch (e) {
+      console.warn('Live subscription to teacher classrooms failed:', e);
+    }
+  }
+
+  // Fallback demo listener
+  const handler = () => {
+    initial();
+  };
+  demoListeners.push(handler);
+
+  return () => {
+    const idx = demoListeners.indexOf(handler);
+    if (idx !== -1) demoListeners.splice(idx, 1);
+  };
 }
 
 // Find classroom by Room Code
@@ -371,6 +463,67 @@ export async function joinClassroom(classroomId: string, studentName: string): P
   return newStudent;
 }
 
+// Add Student to Classroom (by Teacher)
+export async function addStudentToClassroom(classroomId: string, studentName: string): Promise<Student> {
+  const studentId = 'std-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6);
+  const { db, isLive } = initFirebase();
+
+  const newStudent: Student = {
+    id: studentId,
+    uid: 'roster-' + studentId,
+    classroomId: classroomId,
+    name: studentName.trim(),
+    joinedAt: new Date().toISOString(),
+    totalScore: 0,
+    progressPercentage: 0,
+    completedLevelsCount: 0,
+    currentWorld: 1,
+    currentLevelId: '1.1',
+    status: 'idle',
+    levels: {},
+    worksheets: {},
+    assessments: {}
+  };
+
+  if (isLive && db) {
+    try {
+      await setDoc(doc(db, 'classrooms', classroomId, 'students', studentId), newStudent);
+    } catch (err) {
+      console.warn('addStudentToClassroom setDoc error, saving to local demo store:', err);
+    }
+  }
+
+  // Always sync to demo store
+  const demo = getDemoDB();
+  if (!demo.students[classroomId]) {
+    demo.students[classroomId] = {};
+  }
+  demo.students[classroomId][studentId] = newStudent;
+  saveDemoDB(demo);
+
+  return newStudent;
+}
+
+// Remove Student from Classroom (by Teacher)
+export async function removeStudentFromClassroom(classroomId: string, studentId: string): Promise<void> {
+  const { db, isLive } = initFirebase();
+
+  if (isLive && db) {
+    try {
+      await deleteDoc(doc(db, 'classrooms', classroomId, 'students', studentId));
+    } catch (err) {
+      console.warn('removeStudentFromClassroom deleteDoc error, removing from demo store:', err);
+    }
+  }
+
+  // Always delete from demo store
+  const demo = getDemoDB();
+  if (demo.students[classroomId] && demo.students[classroomId][studentId]) {
+    delete demo.students[classroomId][studentId];
+    saveDemoDB(demo);
+  }
+}
+
 // Real-time Subscriptions
 export function subscribeToClassroom(classroomId: string, callback: (classroom: Classroom | null) => void): Unsubscribe {
   const { db, isLive } = initFirebase();
@@ -450,6 +603,38 @@ export function subscribeToStudents(classroomId: string, callback: (students: St
       const idx = demoListeners.indexOf(update);
       if (idx !== -1) demoListeners.splice(idx, 1);
     };
+  }
+}
+
+// Save in-progress draft block commands for a level
+export async function saveStudentLevelDraft(
+  classroomId: string,
+  studentId: string,
+  levelId: string,
+  commands: CommandType[]
+): Promise<void> {
+  const { db, isLive } = initFirebase();
+
+  if (isLive && db) {
+    try {
+      const studentRef = doc(db, 'classrooms', classroomId, 'students', studentId);
+      const snap = await getDoc(studentRef);
+      if (snap.exists()) {
+        const current = snap.data() as Student;
+        const draftLevels = { ...(current.draftLevels || {}), [levelId]: commands };
+        await updateDoc(studentRef, { draftLevels });
+      }
+    } catch (err) {
+      console.warn('saveStudentLevelDraft live error, fallback to demo store:', err);
+    }
+  }
+
+  // Always update local demo DB
+  const demo = getDemoDB();
+  if (demo.students[classroomId]?.[studentId]) {
+    const st = demo.students[classroomId][studentId];
+    st.draftLevels = { ...(st.draftLevels || {}), [levelId]: commands };
+    saveDemoDB(demo);
   }
 }
 

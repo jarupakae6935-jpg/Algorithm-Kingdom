@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Classroom, Student, LevelResult, WorksheetSubmission } from '../../types';
-import { subscribeToClassroom, saveStudentLevelResult, saveAssessmentResult, saveWorksheetSubmission, saveStudentReflection } from '../../firebase/db';
+import { Classroom, Student, LevelResult, WorksheetSubmission, CommandType } from '../../types';
+import { subscribeToClassroom, saveStudentLevelResult, saveAssessmentResult, saveWorksheetSubmission, saveStudentReflection, saveStudentLevelDraft } from '../../firebase/db';
 import { GAME_LEVELS } from '../../data/gameData';
 import { GameMap } from '../game/GameMap';
 import { AlgorithmEngine } from '../game/AlgorithmEngine';
@@ -9,7 +9,7 @@ import { WorksheetModal } from './WorksheetModal';
 import { ReflectionModal } from './ReflectionModal';
 import { CertificateModal } from './CertificateModal';
 import { GameLevelDef } from '../../types';
-import { Trophy, Star, FileText, Award, Bell, Sparkles, CheckCircle2, MessageSquare, ShieldAlert } from 'lucide-react';
+import { Trophy, Star, FileText, Award, Bell, Sparkles, CheckCircle2, MessageSquare, ShieldAlert, Clock, Save } from 'lucide-react';
 import { sounds } from '../../utils/audio';
 
 interface Props {
@@ -69,6 +69,13 @@ export const StudentDashboard: React.FC<Props> = ({
     await saveStudentLevelResult(classroom.id, student.id, res);
   };
 
+  // Handle saving level draft commands
+  const handleSaveLevelDraft = async (levelId: string, commands: CommandType[]) => {
+    const updatedDrafts = { ...(student.draftLevels || {}), [levelId]: commands };
+    setStudent(prev => ({ ...prev, draftLevels: updatedDrafts }));
+    await saveStudentLevelDraft(classroom.id, student.id, levelId, commands);
+  };
+
   // Handle Pre/Post Test complete
   const handleAssessmentComplete = async (type: 'pretest' | 'posttest', score: number) => {
     let pre = student.preTestScore;
@@ -89,11 +96,13 @@ export const StudentDashboard: React.FC<Props> = ({
     setActiveTab('map');
   };
 
-  // Handle Worksheet Submission
+  // Handle Worksheet Submission (Draft or Final)
   const handleWorksheetSubmit = async (sub: WorksheetSubmission) => {
     const updated = { ...student.worksheets, [sub.worksheetId]: sub };
     setStudent(prev => ({ ...prev, worksheets: updated }));
-    setSelectedWorksheetId(null);
+    if (sub.completed) {
+      setSelectedWorksheetId(null);
+    }
     await saveWorksheetSubmission(classroom.id, student.id, sub);
   };
 
@@ -287,6 +296,8 @@ export const StudentDashboard: React.FC<Props> = ({
       {selectedLevel ? (
         <AlgorithmEngine
           level={selectedLevel}
+          initialDraftCommands={student.draftLevels?.[selectedLevel.id]}
+          onSaveDraft={(cmds) => handleSaveLevelDraft(selectedLevel.id, cmds)}
           onLevelComplete={handleLevelComplete}
           onBackToMap={() => setSelectedLevel(null)}
           maxHearts={classroom.settings?.maxHearts || 3}
@@ -308,34 +319,83 @@ export const StudentDashboard: React.FC<Props> = ({
           onComplete={(sc) => handleAssessmentComplete('posttest', sc)}
         />
       ) : activeTab === 'worksheets' ? (
-        <div className="bg-white p-6 rounded-3xl border-b-4 border-slate-200 space-y-4 shadow-sm">
-          <h3 className="text-lg font-black text-indigo-900 flex items-center gap-2">
-            <FileText className="w-5 h-5 text-indigo-600" />
-            ใบงานดิจิทัลประจำบทเรียน
-          </h3>
+        <div className="bg-white p-6 rounded-3xl border-b-4 border-slate-200 space-y-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-slate-100 pb-4">
+            <div>
+              <h3 className="text-lg font-black text-indigo-900 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-indigo-600" />
+                ใบงานดิจิทัลประจำบทเรียน (13 ใบงาน)
+              </h3>
+              <p className="text-xs font-bold text-slate-400 mt-0.5">
+                นักเรียนสามารถตอบคำถามและกดบันทึกงานค้างไว้ (แบบร่าง) เพื่อกลับมาทำต่อภายหลังได้
+              </p>
+            </div>
+
+            {/* Quick Worksheet Stats */}
+            <div className="flex items-center gap-2 text-xs font-black">
+              <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-xl">
+                🟢 ส่งแล้ว: {(Object.values(student.worksheets || {}) as WorksheetSubmission[]).filter(w => w.completed).length}
+              </span>
+              <span className="bg-amber-50 text-amber-800 border border-amber-200 px-3 py-1 rounded-xl">
+                🟡 งานค้าง (แบบร่าง): {(Object.values(student.worksheets || {}) as WorksheetSubmission[]).filter(w => !w.completed && Object.keys(w.answers || {}).length > 0).length}
+              </span>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {Array.from({ length: 13 }).map((_, idx) => {
               const wsId = idx + 1;
               const sub = student.worksheets?.[wsId];
+              const isCompleted = !!sub?.completed;
+              const answeredCount = Object.keys(sub?.answers || {}).length;
+              const isDraft = !isCompleted && answeredCount > 0;
+
               return (
                 <div
                   key={wsId}
-                  onClick={() => setSelectedWorksheetId(wsId)}
-                  className="p-4 bg-slate-50 hover:bg-indigo-50/50 border-2 border-slate-200 hover:border-indigo-400 rounded-2xl cursor-pointer transition flex items-center justify-between"
+                  onClick={() => {
+                    sounds.playClick();
+                    setSelectedWorksheetId(wsId);
+                  }}
+                  className={`p-4 rounded-2xl cursor-pointer transition flex items-center justify-between border-2 ${
+                    isCompleted
+                      ? 'bg-emerald-50/40 hover:bg-emerald-50 border-emerald-200 hover:border-emerald-400'
+                      : isDraft
+                      ? 'bg-amber-50/50 hover:bg-amber-50 border-amber-300 hover:border-amber-400'
+                      : 'bg-slate-50 hover:bg-indigo-50/50 border-slate-200 hover:border-indigo-400'
+                  }`}
                 >
-                  <div>
-                    <h4 className="text-sm font-black text-slate-800">ใบงานที่ {wsId}</h4>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-black text-slate-800">ใบงานที่ {wsId}</h4>
+                      {isDraft && (
+                        <span className="text-[10px] bg-amber-200 text-amber-900 font-extrabold px-1.5 py-0.5 rounded-md">
+                          มีงานค้าง
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs font-bold text-slate-400">
-                      {sub?.completed ? 'ส่งแล้ว' : 'ยังไม่ได้ส่ง'}
+                      {isCompleted
+                        ? sub?.score !== undefined
+                          ? `คะแนนที่ได้: ${sub.score}/10`
+                          : 'ส่งแล้ว (รอครูตรวจ)'
+                        : isDraft
+                        ? `บันทึกไว้แล้ว (${answeredCount} ข้อ)`
+                        : 'ยังไม่ได้เริ่มทำ'}
                     </p>
                   </div>
-                  {sub?.completed ? (
-                    <span className="text-xs text-emerald-700 font-black bg-emerald-100 px-2.5 py-1 rounded-full border border-emerald-200">
-                      {sub.score !== undefined ? `${sub.score}/10` : 'ตรวจแล้ว'}
+
+                  {isCompleted ? (
+                    <span className="text-xs text-emerald-700 font-black bg-emerald-100 px-3 py-1 rounded-xl border border-emerald-300">
+                      {sub.score !== undefined ? `${sub.score}/10` : '✓ ส่งแล้ว'}
+                    </span>
+                  ) : isDraft ? (
+                    <span className="text-xs text-amber-800 bg-amber-100 hover:bg-amber-200 font-black px-3 py-1 rounded-xl border border-amber-300 flex items-center gap-1">
+                      ทำต่อ ✎
                     </span>
                   ) : (
-                    <span className="text-xs text-indigo-600 bg-indigo-50 font-black px-2.5 py-1 rounded-full border border-indigo-100">
-                      ทำใบงาน
+                    <span className="text-xs text-indigo-600 bg-indigo-50 hover:bg-indigo-100 font-black px-3 py-1 rounded-xl border border-indigo-200">
+                      เริ่มทำ ➔
                     </span>
                   )}
                 </div>

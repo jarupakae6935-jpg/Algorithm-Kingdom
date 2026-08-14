@@ -67,7 +67,7 @@ export interface WorksheetSubmission {
   answers: Record<string, any>;
   score?: number; // Teacher graded score out of 10
   feedback?: string;
-  status: 'pending' | 'graded';
+  status: 'draft' | 'pending' | 'graded';
   completed: boolean;
   updatedAt: string;
 }
@@ -123,6 +123,7 @@ export interface Student {
   observation?: StudentObservation;
   feedbacks?: TeacherFeedback[];
   certificateId?: string;
+  draftLevels?: Record<string, CommandType[]>;
 }
 
 export type Direction = 'UP' | 'RIGHT' | 'DOWN' | 'LEFT';

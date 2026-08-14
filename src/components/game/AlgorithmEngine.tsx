@@ -2,11 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import { GameLevelDef, CommandType, Direction, GridCell, LevelResult } from '../../types';
 import { sounds } from '../../utils/audio';
-import { Play, RotateCcw, HelpCircle, StepForward, CheckCircle2, ShieldAlert, Sparkles, Bug } from 'lucide-react';
+import { Play, RotateCcw, HelpCircle, StepForward, CheckCircle2, ShieldAlert, Sparkles, Bug, Save, Bookmark } from 'lucide-react';
 
 interface Props {
   level: GameLevelDef;
+  initialDraftCommands?: CommandType[];
   onLevelComplete: (result: LevelResult) => void;
+  onSaveDraft?: (commands: CommandType[]) => void;
   onBackToMap: () => void;
   maxHearts?: number;
 }
@@ -20,13 +22,19 @@ interface RobotState {
 
 export const AlgorithmEngine: React.FC<Props> = ({
   level,
+  initialDraftCommands,
   onLevelComplete,
+  onSaveDraft,
   onBackToMap,
   maxHearts = 3
 }) => {
-  // Command sequence workspace
+  // Command sequence workspace (load draft if available)
   const [commands, setCommands] = useState<CommandType[]>(
-    level.initialBuggyCommands ? [...level.initialBuggyCommands] : []
+    initialDraftCommands && initialDraftCommands.length > 0
+      ? [...initialDraftCommands]
+      : level.initialBuggyCommands
+      ? [...level.initialBuggyCommands]
+      : []
   );
 
   // Execution state
@@ -49,6 +57,7 @@ export const AlgorithmEngine: React.FC<Props> = ({
   const [timeSpent, setTimeSpent] = useState(0);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [levelFinished, setLevelFinished] = useState(false);
+  const [draftSavedToast, setDraftSavedToast] = useState(false);
 
   const timerRef = useRef<any>(null);
 
@@ -264,6 +273,15 @@ export const AlgorithmEngine: React.FC<Props> = ({
     }
   };
 
+  const handleSaveDraft = () => {
+    if (onSaveDraft) {
+      sounds.playClick();
+      onSaveDraft(commands);
+      setDraftSavedToast(true);
+      setTimeout(() => setDraftSavedToast(false), 2500);
+    }
+  };
+
   const getCommandLabel = (cmd: CommandType) => {
     switch (cmd) {
       case 'FORWARD': return 'เดินหน้า ⬆️';
@@ -292,8 +310,13 @@ export const AlgorithmEngine: React.FC<Props> = ({
       <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-800/80 p-4 rounded-2xl border border-slate-700">
         <div className="flex items-center gap-3">
           <button
-            onClick={onBackToMap}
-            className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl text-sm font-semibold transition"
+            onClick={() => {
+              if (commands.length > 0 && !levelFinished && onSaveDraft) {
+                onSaveDraft(commands);
+              }
+              onBackToMap();
+            }}
+            className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl text-sm font-semibold transition flex items-center gap-1"
           >
             ‹ กลับแผนที่
           </button>
@@ -308,7 +331,16 @@ export const AlgorithmEngine: React.FC<Props> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-4 text-sm font-medium">
+        <div className="flex items-center gap-2 sm:gap-4 text-sm font-medium">
+          <button
+            onClick={handleSaveDraft}
+            className="flex items-center gap-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 px-3 py-1.5 rounded-xl transition text-xs font-bold"
+            title="บันทึกบล็อกคำสั่งไว้ทำต่อคราวหน้า"
+          >
+            <Save className="w-3.5 h-3.5" />
+            <span>บันทึกงานค้าง</span>
+          </button>
+
           <div className="flex items-center gap-1 text-rose-400 bg-rose-950/40 px-3 py-1.5 rounded-xl border border-rose-800/50">
             <span>❤️</span>
             <span className="font-bold">{hearts}</span>
@@ -332,6 +364,13 @@ export const AlgorithmEngine: React.FC<Props> = ({
           </button>
         </div>
       </div>
+
+      {draftSavedToast && (
+        <div className="p-3 bg-indigo-500/20 border border-indigo-500/40 rounded-2xl text-indigo-200 text-xs font-black flex items-center justify-center gap-2 animate-bounce">
+          <Bookmark className="w-4 h-4 text-indigo-400" />
+          💾 บันทึกคำสั่งของด่านนี้ไว้เรียบร้อยแล้ว! สามารถกลับมาเล่นต่อได้ทุกเมื่อ
+        </div>
+      )}
 
       {/* Main Play Area Grid & Controls */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
