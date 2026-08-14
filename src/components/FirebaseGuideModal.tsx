@@ -12,25 +12,16 @@ interface Props {
 const FIRESTORE_RULES_TEXT = `rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Teacher Profiles
-    match /users/{userId} {
+    match /{document=**} {
       allow read, write: if true;
     }
+  }
+}`;
 
-    // Classrooms
-    match /classrooms/{classroomId} {
-      allow read, write: if true;
-
-      // Students inside classroom
-      match /students/{studentId} {
-        allow read, write: if true;
-
-        match /{document=**} {
-          allow read, write: if true;
-        }
-      }
-    }
+const REALTIME_DB_RULES_TEXT = `{
+  "rules": {
+    ".read": true,
+    ".write": true
   }
 }`;
 
@@ -48,6 +39,7 @@ export const FirebaseGuideModal: React.FC<Props> = ({ onClose, onConfigSaved }) 
   const [activeTab, setActiveTab] = useState<'config' | 'rules' | 'guide'>('config');
   const [saved, setSaved] = useState(false);
   const [copiedRules, setCopiedRules] = useState(false);
+  const [copiedRtdbRules, setCopiedRtdbRules] = useState(false);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,6 +63,13 @@ export const FirebaseGuideModal: React.FC<Props> = ({ onClose, onConfigSaved }) 
     navigator.clipboard.writeText(FIRESTORE_RULES_TEXT);
     setCopiedRules(true);
     setTimeout(() => setCopiedRules(false), 2500);
+  };
+
+  const handleCopyRtdbRules = () => {
+    sounds.playClick();
+    navigator.clipboard.writeText(REALTIME_DB_RULES_TEXT);
+    setCopiedRtdbRules(true);
+    setTimeout(() => setCopiedRtdbRules(false), 2500);
   };
 
   return (
@@ -218,32 +217,60 @@ export const FirebaseGuideModal: React.FC<Props> = ({ onClose, onConfigSaved }) 
             <div className="p-3.5 bg-amber-50 rounded-2xl border border-amber-200 flex items-start gap-3">
               <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
               <div className="text-xs text-amber-900 leading-relaxed font-bold">
-                <p className="font-black text-amber-950">พบปัญหา Permission Denied หรือนักเรียนบันทึกคะแนนไม่ได้?</p>
+                <p className="font-black text-amber-950">วิธีแก้ Permission Denied / Error saving rules:</p>
                 <p className="mt-1">
-                  1. ไปที่ <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" className="underline text-indigo-700">Firebase Console</a> ➔ <strong>Firestore Database</strong> ➔ แถบ <strong>Rules</strong>
+                  • หากใช้ <strong>Firestore Database</strong> (แนะนำ) ➔ คัดลอกแบบที่ 1 ไปวางในแถบ Rules
                 </p>
-                <p>2. นำ Security Rules ด้านล่างนี้ไปวางแทนที่ แล้วกดปุ่ม <strong>Publish</strong></p>
+                <p>
+                  • หากหน้าต่าง Rules ของคุณเป็น <strong>Realtime Database (มีปีกกา JSON)</strong> ➔ คัดลอกแบบที่ 2 (JSON) เพื่อไม่ให้ติด Parse Error
+                </p>
               </div>
             </div>
 
-            <div className="relative">
-              <pre className="bg-slate-900 text-emerald-300 p-4 rounded-2xl text-[11px] font-mono overflow-x-auto max-h-56 border border-slate-800">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-indigo-900">1. Cloud Firestore Rules (สำหรับเมนู Firestore Database):</span>
+                <button
+                  onClick={handleCopyRules}
+                  className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-black rounded-xl flex items-center gap-1.5 shadow transition"
+                >
+                  {copiedRules ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-300" /> คัดลอกแล้ว!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" /> คัดลอก Firestore Rules
+                    </>
+                  )}
+                </button>
+              </div>
+              <pre className="bg-slate-900 text-emerald-300 p-3 rounded-2xl text-[11px] font-mono overflow-x-auto border border-slate-800">
                 {FIRESTORE_RULES_TEXT}
               </pre>
-              <button
-                onClick={handleCopyRules}
-                className="absolute top-2 right-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black rounded-xl flex items-center gap-1.5 shadow transition"
-              >
-                {copiedRules ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-300" /> คัดลอกแล้ว!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5" /> คัดลอก Rules
-                  </>
-                )}
-              </button>
+            </div>
+
+            <div className="space-y-2 pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-slate-700">2. Realtime Database Rules (สำหรับเมนู Realtime Database):</span>
+                <button
+                  onClick={handleCopyRtdbRules}
+                  className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white text-[11px] font-black rounded-xl flex items-center gap-1.5 shadow transition"
+                >
+                  {copiedRtdbRules ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-300" /> คัดลอกแล้ว!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" /> คัดลอก JSON Rules
+                    </>
+                  )}
+                </button>
+              </div>
+              <pre className="bg-slate-900 text-amber-300 p-3 rounded-2xl text-[11px] font-mono overflow-x-auto border border-slate-800">
+                {REALTIME_DB_RULES_TEXT}
+              </pre>
             </div>
           </div>
         )}
