@@ -5,6 +5,15 @@ import { FirebaseConfigType } from '../types';
 
 const DEFAULT_CONFIG_KEY = 'custom_firebase_config';
 
+export const DEFAULT_FIREBASE_CONFIG: FirebaseConfigType = {
+  apiKey: "AIzaSyC1yjNYZQk9S19A5142hosWjPulyVeXDtQ",
+  authDomain: "algorithm-adventure-2bbec.firebaseapp.com",
+  projectId: "algorithm-adventure-2bbec",
+  storageBucket: "algorithm-adventure-2bbec.firebasestorage.app",
+  messagingSenderId: "117641746509",
+  appId: "1:117641746509:web:fb4ecef6f1fb6ae203a404"
+};
+
 export function getStoredFirebaseConfig(): FirebaseConfigType | null {
   try {
     const raw = localStorage.getItem(DEFAULT_CONFIG_KEY);
@@ -26,7 +35,7 @@ export function getStoredFirebaseConfig(): FirebaseConfigType | null {
     }
   }
 
-  return null;
+  return DEFAULT_FIREBASE_CONFIG;
 }
 
 export function isFirebaseInitialized(): boolean {
