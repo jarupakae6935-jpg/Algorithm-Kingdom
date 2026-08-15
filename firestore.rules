@@ -1,34 +1,8 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Helper functions
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    // Teacher Profiles
-    match /users/{userId} {
+    match /{document=**} {
       allow read, write: if true;
-    }
-
-    // Classrooms
-    match /classrooms/{classroomId} {
-      // Allow reading classroom info (room codes, settings, announcements)
-      allow read: if true;
-      // Allow creating, updating, and deleting classroom data
-      allow create, update, delete: if true;
-
-      // Students inside classroom
-      match /students/{studentId} {
-        // Students and teachers can read and update student progress, scores, tests
-        allow read, write: if true;
-
-        // Subcollections (levels, worksheets, assessments, reflections)
-        match /{document=**} {
-          allow read, write: if true;
-        }
-      }
     }
   }
 }
