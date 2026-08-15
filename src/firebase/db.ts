@@ -282,6 +282,35 @@ export async function createClassroom(
   return classroom;
 }
 
+// Delete Classroom
+export async function deleteClassroom(classroomId: string): Promise<void> {
+  const { db, isLive } = initFirebase();
+
+  if (isLive && db) {
+    try {
+      // 1. Delete all students subcollection documents
+      const studentsSnap = await getDocs(collection(db, 'classrooms', classroomId, 'students'));
+      const studentDeletions = studentsSnap.docs.map((sDoc) => deleteDoc(sDoc.ref));
+      await Promise.all(studentDeletions);
+
+      // 2. Delete classroom document
+      await deleteDoc(doc(db, 'classrooms', classroomId));
+    } catch (err) {
+      console.warn('deleteClassroom Firestore error:', err);
+    }
+  }
+
+  // 3. Remove from local demo store
+  const demo = getDemoDB();
+  if (demo.classrooms[classroomId]) {
+    delete demo.classrooms[classroomId];
+  }
+  if (demo.students[classroomId]) {
+    delete demo.students[classroomId];
+  }
+  saveDemoDB(demo);
+}
+
 // Fetch all classrooms for a specific teacher
 export async function fetchTeacherClassrooms(teacherId: string): Promise<Classroom[]> {
   const { db, isLive } = initFirebase();
@@ -373,44 +402,149 @@ export function subscribeToTeacherClassrooms(
   };
 }
 
-// Find classroom by Room Code
+// Find classroom by Room Code (supports ALG4-XXXX, XXXX, case-insensitive, with/without hyphen)
 export async function findClassroomByCode(roomCode: string): Promise<Classroom | null> {
-  const normalizedCode = roomCode.trim().toUpperCase();
+  if (!roomCode || typeof roomCode !== 'string') return null;
+
+  const rawInput = roomCode.trim().toUpperCase();
+  const clean = rawInput.replace(/[^A-Z0-9]/g, '');
+  if (!clean) return null;
+
+  // Build list of candidate room codes
+  const candidateSet = new Set<string>();
+  candidateSet.add(rawInput);
+  candidateSet.add(clean);
+
+  if (clean.length === 4) {
+    candidateSet.add(`ALG4-${clean}`);
+  } else if (clean.startsWith('ALG4') && clean.length === 8) {
+    candidateSet.add(`ALG4-${clean.substring(4)}`);
+  } else if (clean.length > 4) {
+    candidateSet.add(`ALG4-${clean.slice(-4)}`);
+  }
+
+  const candidateList = Array.from(candidateSet);
   const { db, isLive } = initFirebase();
 
   if (isLive && db) {
     try {
-      const q = query(collection(db, 'classrooms'), where('roomCode', '==', normalizedCode));
+      // 1. Direct query with 'in' operator
+      const q = query(
+        collection(db, 'classrooms'),
+        where('roomCode', 'in', candidateList.slice(0, 10))
+      );
       const snap = await getDocs(q);
       if (!snap.empty) {
         return snap.docs[0].data() as Classroom;
       }
-      return null;
-    } catch (err) {
-      console.warn('findClassroomByCode Firebase error, fallback to demo db:', err);
-      const demo = getDemoDB();
-      for (const cid in demo.classrooms) {
-        if (demo.classrooms[cid].roomCode.toUpperCase() === normalizedCode) {
-          return demo.classrooms[cid];
+
+      // 2. Scan all classrooms in Firestore as backup if exact code didn't hit
+      const allSnap = await getDocs(collection(db, 'classrooms'));
+      for (const d of allSnap.docs) {
+        const c = d.data() as Classroom;
+        if (c.roomCode) {
+          const cClean = c.roomCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
+          if (cClean === clean || (clean.length === 4 && cClean.endsWith(clean))) {
+            return c;
+          }
         }
       }
-      return null;
+    } catch (err) {
+      console.warn('findClassroomByCode Firebase query error, checking local store:', err);
     }
-  } else {
-    const demo = getDemoDB();
-    for (const cid in demo.classrooms) {
-      if (demo.classrooms[cid].roomCode.toUpperCase() === normalizedCode) {
-        return demo.classrooms[cid];
-      }
-    }
-    return null;
   }
+
+  // Always check Demo / Local DB
+  const demo = getDemoDB();
+  for (const cid in demo.classrooms) {
+    const c = demo.classrooms[cid];
+    if (!c.roomCode) continue;
+
+    const cClean = c.roomCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (
+      c.roomCode.toUpperCase() === rawInput ||
+      candidateList.includes(c.roomCode.toUpperCase()) ||
+      cClean === clean ||
+      (clean.length === 4 && cClean.endsWith(clean))
+    ) {
+      return c;
+    }
+  }
+
+  return null;
 }
 
-// Join Classroom (Student)
+// Fetch all students in a classroom
+export async function fetchStudentsInClassroom(classroomId: string): Promise<Student[]> {
+  const { db, isLive } = initFirebase();
+  const studentsMap = new Map<string, Student>();
+
+  // 1. Fetch from Firestore if live
+  if (isLive && db) {
+    try {
+      const snap = await getDocs(collection(db, 'classrooms', classroomId, 'students'));
+      snap.forEach(d => {
+        const s = d.data() as Student;
+        studentsMap.set(s.id, s);
+      });
+    } catch (err) {
+      console.warn('fetchStudentsInClassroom Firestore error:', err);
+    }
+  }
+
+  // 2. Merge with demo/local store
+  const demo = getDemoDB();
+  if (demo.students[classroomId]) {
+    for (const sid in demo.students[classroomId]) {
+      const s = demo.students[classroomId][sid];
+      if (!studentsMap.has(s.id)) {
+        studentsMap.set(s.id, s);
+      }
+    }
+  }
+
+  return Array.from(studentsMap.values()).sort((a, b) => a.name.localeCompare(b.name, 'th'));
+}
+
+// Join Classroom (Student) - Re-links existing student by name or creates new one
 export async function joinClassroom(classroomId: string, studentName: string): Promise<Student> {
-  const studentId = 'std-' + Date.now().toString(36);
+  const trimmedName = studentName.trim();
   const { auth, db, isLive } = initFirebase();
+
+  // First check if student already exists in this classroom
+  const existingList = await fetchStudentsInClassroom(classroomId);
+  const existing = existingList.find(
+    s => s.name.trim().toLowerCase() === trimmedName.toLowerCase()
+  );
+
+  if (existing) {
+    // Re-link existing student profile so their scores, levels, and worksheets are preserved
+    const updatedStudent: Student = {
+      ...existing,
+      status: 'idle',
+      joinedAt: existing.joinedAt || new Date().toISOString()
+    };
+
+    if (isLive && db) {
+      try {
+        await updateDoc(doc(db, 'classrooms', classroomId, 'students', existing.id), {
+          status: 'idle'
+        });
+      } catch (e) {
+        console.warn('Update existing student status error:', e);
+      }
+    }
+
+    const demo = getDemoDB();
+    if (!demo.students[classroomId]) demo.students[classroomId] = {};
+    demo.students[classroomId][existing.id] = updatedStudent;
+    saveDemoDB(demo);
+
+    return updatedStudent;
+  }
+
+  // Create new student
+  const studentId = 'std-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 5);
 
   let uid = 'anon-' + studentId;
   if (isLive && auth) {
@@ -426,7 +560,7 @@ export async function joinClassroom(classroomId: string, studentName: string): P
     id: studentId,
     uid: uid,
     classroomId: classroomId,
-    name: studentName,
+    name: trimmedName,
     joinedAt: new Date().toISOString(),
     totalScore: 0,
     progressPercentage: 0,
@@ -444,21 +578,16 @@ export async function joinClassroom(classroomId: string, studentName: string): P
       await setDoc(doc(db, 'classrooms', classroomId, 'students', studentId), newStudent);
     } catch (err) {
       console.warn('joinClassroom setDoc error, saving to local demo store:', err);
-      const demo = getDemoDB();
-      if (!demo.students[classroomId]) {
-        demo.students[classroomId] = {};
-      }
-      demo.students[classroomId][studentId] = newStudent;
-      saveDemoDB(demo);
     }
-  } else {
-    const demo = getDemoDB();
-    if (!demo.students[classroomId]) {
-      demo.students[classroomId] = {};
-    }
-    demo.students[classroomId][studentId] = newStudent;
-    saveDemoDB(demo);
   }
+
+  // Always keep in local demo DB
+  const demo = getDemoDB();
+  if (!demo.students[classroomId]) {
+    demo.students[classroomId] = {};
+  }
+  demo.students[classroomId][studentId] = newStudent;
+  saveDemoDB(demo);
 
   return newStudent;
 }

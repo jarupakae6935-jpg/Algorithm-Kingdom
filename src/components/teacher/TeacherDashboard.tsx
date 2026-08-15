@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { TeacherUser, Classroom, Student, WorksheetSubmission } from '../../types';
-import { createClassroom, subscribeToStudents, sendAnnouncement, subscribeToTeacherClassrooms, addStudentToClassroom, removeStudentFromClassroom } from '../../firebase/db';
+import { createClassroom, deleteClassroom, subscribeToStudents, sendAnnouncement, subscribeToTeacherClassrooms, addStudentToClassroom, removeStudentFromClassroom } from '../../firebase/db';
 import { calculateClassAnalytics } from '../../utils/analytics';
 import { exportClassroomToCSV, exportClassroomToJSON } from '../../utils/export';
 import { ClassroomLiveMonitor } from './ClassroomLiveMonitor';
@@ -11,6 +11,7 @@ import { ObservationModal } from './ObservationModal';
 import { ClassSettingsModal } from './ClassSettingsModal';
 import { AddStudentModal } from './AddStudentModal';
 import { DeleteStudentModal } from './DeleteStudentModal';
+import { DeleteClassroomModal } from './DeleteClassroomModal';
 import { FirebaseGuideModal } from '../FirebaseGuideModal';
 import { Plus, QrCode, Monitor, Settings, Download, FileText, Send, Eye, ShieldAlert, Sparkles, BarChart3, AlertCircle, UserPlus, UserMinus, Trash2 } from 'lucide-react';
 import { sounds } from '../../utils/audio';
@@ -29,6 +30,7 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
   const [showCreateClassModal, setShowCreateClassModal] = useState(false);
   const [showAddStudentModal, setShowAddStudentModal] = useState(false);
   const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
+  const [classroomToDelete, setClassroomToDelete] = useState<Classroom | null>(null);
   const [showQrModal, setShowQrModal] = useState(false);
   const [showLiveMonitor, setShowLiveMonitor] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -55,31 +57,8 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
           return found || list[0];
         });
       } else {
-        // Create initial default demo class if completely none exists
-        const defaultClass: Classroom = {
-          id: 'demo-class-01',
-          name: 'วิทยาการคำนวณ ป.4/1',
-          teacherId: teacher.uid,
-          teacherName: teacher.name,
-          academicYear: '2569',
-          roomCode: 'ALG4-K8P2',
-          status: 'active',
-          createdAt: new Date().toISOString(),
-          settings: {
-            maxTimePerLevel: 300,
-            maxHearts: 3,
-            enableHints: true,
-            enableTimer: true,
-            enableSound: true,
-            enableWorksheets: true,
-            allowedWorld: 3,
-            privacyMode: false,
-            isPaused: false,
-            isOpen: true
-          }
-        };
-        setClassrooms([defaultClass]);
-        setSelectedClassroom(defaultClass);
+        setClassrooms([]);
+        setSelectedClassroom(null);
       }
     });
     return () => unsub();
@@ -245,6 +224,17 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
                 className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-black rounded-2xl text-xs transition flex items-center gap-1.5"
               >
                 <Download className="w-4 h-4" /> Export CSV
+              </button>
+
+              <button
+                onClick={() => {
+                  sounds.playClick();
+                  setClassroomToDelete(selectedClassroom);
+                }}
+                className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-black rounded-2xl text-xs transition flex items-center gap-1.5"
+                title="ลบห้องเรียนนี้"
+              >
+                <Trash2 className="w-4 h-4 text-rose-600" /> ลบห้องเรียน
               </button>
             </div>
           </div>
@@ -531,6 +521,28 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
         </div>
       )}
 
+      {/* Empty State when no classrooms exist */}
+      {!selectedClassroom && classrooms.length === 0 && (
+        <div className="bg-white border-b-4 border-indigo-100 p-12 rounded-3xl text-center space-y-4 shadow-sm">
+          <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-3xl flex items-center justify-center mx-auto text-2xl font-black">
+            🏫
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-xl font-black text-slate-800">ยังไม่มีห้องเรียนในระบบ</h2>
+            <p className="text-xs text-slate-500 font-bold">คุณครูสามารถสร้างห้องเรียนใหม่เพื่อเริ่มบทเรียนและรับนักเรียนเข้าร่วมได้ทันที</p>
+          </div>
+          <button
+            onClick={() => {
+              sounds.playClick();
+              setShowCreateClassModal(true);
+            }}
+            className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl text-xs transition inline-flex items-center gap-2 shadow-sm"
+          >
+            <Plus className="w-4 h-4" /> สร้างห้องเรียนใหม่
+          </button>
+        </div>
+      )}
+
       {/* QR Code Modal */}
       {showQrModal && selectedClassroom && (
         <QrDisplayModal
@@ -553,6 +565,27 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
         <ClassSettingsModal
           classroom={selectedClassroom}
           onClose={() => setShowSettingsModal(false)}
+          onDeleteClassroom={() => setClassroomToDelete(selectedClassroom)}
+        />
+      )}
+
+      {/* Delete Classroom Modal */}
+      {classroomToDelete && (
+        <DeleteClassroomModal
+          classroom={classroomToDelete}
+          studentCount={classroomToDelete.id === selectedClassroom?.id ? students.length : 0}
+          onConfirm={async () => {
+            await deleteClassroom(classroomToDelete.id);
+            const remaining = classrooms.filter((c) => c.id !== classroomToDelete.id);
+            setClassrooms(remaining);
+            if (remaining.length > 0) {
+              setSelectedClassroom(remaining[0]);
+            } else {
+              setSelectedClassroom(null);
+            }
+            setClassroomToDelete(null);
+          }}
+          onClose={() => setClassroomToDelete(null)}
         />
       )}
 

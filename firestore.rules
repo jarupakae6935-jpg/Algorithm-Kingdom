@@ -16,9 +16,8 @@ service cloud.firestore {
     match /classrooms/{classroomId} {
       // Allow reading classroom info (room codes, settings, announcements)
       allow read: if true;
-      // Allow creating and updating classroom data
-      allow create, update: if true;
-      allow delete: if isAuthenticated();
+      // Allow creating, updating, and deleting classroom data
+      allow create, update, delete: if true;
 
       // Students inside classroom
       match /students/{studentId} {
