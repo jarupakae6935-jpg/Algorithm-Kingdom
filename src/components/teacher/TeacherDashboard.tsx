@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TeacherUser, Classroom, Student, WorksheetSubmission } from '../../types';
 import { createClassroom, deleteClassroom, subscribeToStudents, sendAnnouncement, subscribeToTeacherClassrooms, addStudentToClassroom, removeStudentFromClassroom } from '../../firebase/db';
+import { testFirebaseConnection, FirebaseConnectionStatus } from '../../firebase/config';
 import { calculateClassAnalytics } from '../../utils/analytics';
 import { exportClassroomToCSV, exportClassroomToJSON } from '../../utils/export';
 import { ClassroomLiveMonitor } from './ClassroomLiveMonitor';
@@ -13,7 +14,7 @@ import { AddStudentModal } from './AddStudentModal';
 import { DeleteStudentModal } from './DeleteStudentModal';
 import { DeleteClassroomModal } from './DeleteClassroomModal';
 import { FirebaseGuideModal } from '../FirebaseGuideModal';
-import { Plus, QrCode, Monitor, Settings, Download, FileText, Send, Eye, ShieldAlert, Sparkles, BarChart3, AlertCircle, UserPlus, UserMinus, Trash2 } from 'lucide-react';
+import { Plus, QrCode, Monitor, Settings, Download, FileText, Send, Eye, ShieldAlert, Sparkles, BarChart3, AlertCircle, UserPlus, UserMinus, Trash2, Database, AlertTriangle } from 'lucide-react';
 import { sounds } from '../../utils/audio';
 
 interface Props {
@@ -25,6 +26,7 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [selectedClassroom, setSelectedClassroom] = useState<Classroom | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
+  const [fbStatus, setFbStatus] = useState<FirebaseConnectionStatus | null>(null);
 
   // Modals state
   const [showCreateClassModal, setShowCreateClassModal] = useState(false);
@@ -42,6 +44,10 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
   // New classroom form state
   const [newClassName, setNewClassName] = useState('');
   const [newAcademicYear, setNewAcademicYear] = useState('2569');
+
+  useEffect(() => {
+    testFirebaseConnection().then(setFbStatus);
+  }, []);
 
   // Broadcast announcement
   const [announcementMsg, setAnnouncementMsg] = useState('');
@@ -104,9 +110,21 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setShowFirebaseModal(true)}
-            className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-black rounded-2xl text-xs transition flex items-center gap-1.5"
+            className={`px-3.5 py-2 border font-black rounded-2xl text-xs transition flex items-center gap-1.5 ${
+              fbStatus?.status === 'live'
+                ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                : fbStatus?.status === 'error'
+                ? 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-300 animate-pulse'
+                : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300'
+            }`}
           >
-            🔥 Firebase Setup
+            {fbStatus?.status === 'live' ? (
+              <>🟢 Firebase Live</>
+            ) : fbStatus?.status === 'error' ? (
+              <>⚠️ แก้ Firestore Rules</>
+            ) : (
+              <>🔥 Firebase Setup</>
+            )}
           </button>
 
           <button
@@ -124,6 +142,41 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
           </button>
         </div>
       </div>
+
+      {/* Warning/Guidance Banner if in Demo Mode or error */}
+      {fbStatus && fbStatus.status !== 'live' && (
+        <div className={`p-4 rounded-3xl border-2 flex flex-wrap items-center justify-between gap-3 shadow-sm ${
+          fbStatus.status === 'error'
+            ? 'bg-rose-50 border-rose-300 text-rose-900'
+            : 'bg-amber-50 border-amber-300 text-amber-900'
+        }`}>
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
+              fbStatus.status === 'error' ? 'bg-rose-200 text-rose-700' : 'bg-amber-200 text-amber-800'
+            }`}>
+              {fbStatus.status === 'error' ? <AlertTriangle className="w-5 h-5" /> : <Database className="w-5 h-5" />}
+            </div>
+            <div>
+              <h4 className="text-xs font-black">
+                {fbStatus.status === 'error'
+                  ? '⚠️ Firestore Rules ยังไม่อนุญาตให้นักเรียนเข้าถึง'
+                  : '💡 ขณะนี้อยู่ใน Demo Mode (ข้อมูลบันทึกเฉพาะในเครื่องนี้)'}
+              </h4>
+              <p className="text-[11px] font-bold text-slate-600 mt-0.5">
+                {fbStatus.status === 'error'
+                  ? 'นักเรียนจากเครื่องอื่นจะไม่สามารถนำรหัสเข้าห้องเรียนได้ กรุณากดตั้งค่า Rules'
+                  : 'หากต้องการให้นักเรียนนำรหัสเข้าชั้นเรียนจากแท็บเล็ต/มือถือเครื่องอื่น กรุณาเชื่อมต่อ Firebase Cloud'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowFirebaseModal(true)}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl text-xs shadow transition shrink-0"
+          >
+            {fbStatus.status === 'error' ? '🛡️ ดูโค้ด Firestore Rules' : '🔥 เชื่อมต่อ Firebase ฟรี'}
+          </button>
+        </div>
+      )}
 
       {/* Classroom Selection & Quick Toolbar */}
       {selectedClassroom && (

@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Classroom, Student, TeacherUser } from './types';
-import { isFirebaseInitialized, getStoredFirebaseConfig } from './firebase/config';
+import { isFirebaseInitialized, testFirebaseConnection, FirebaseConnectionStatus } from './firebase/config';
 import { StudentJoin } from './components/student/StudentJoin';
 import { StudentDashboard } from './components/student/StudentDashboard';
 import { TeacherLogin } from './components/teacher/TeacherLogin';
 import { TeacherDashboard } from './components/teacher/TeacherDashboard';
 import { FirebaseGuideModal } from './components/FirebaseGuideModal';
-import { Volume2, VolumeX, ShieldCheck, Database, Award, Sparkles, RefreshCw } from 'lucide-react';
+import { Volume2, VolumeX, ShieldCheck, Database, Award, Sparkles, RefreshCw, AlertTriangle } from 'lucide-react';
 import { sounds } from './utils/audio';
 
 export function App() {
@@ -21,6 +21,16 @@ export function App() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showFirebaseModal, setShowFirebaseModal] = useState(false);
   const [verifyCertId, setVerifyCertId] = useState<string | null>(null);
+  const [firebaseStatus, setFirebaseStatus] = useState<FirebaseConnectionStatus>({
+    status: isFirebaseInitialized() ? 'live' : 'demo',
+    message: isFirebaseInitialized() ? 'กำลังตรวจสอบการเชื่อมต่อ...' : 'โหมดตัวอย่าง (Demo Mode)'
+  });
+
+  useEffect(() => {
+    testFirebaseConnection().then(status => {
+      setFirebaseStatus(status);
+    });
+  }, []);
 
   // Check URL parameters for certificate verification or auto-room join
   useEffect(() => {
@@ -52,8 +62,6 @@ export function App() {
     setViewMode('teacher_dashboard');
   };
 
-  const isLiveFirebase = isFirebaseInitialized();
-
   return (
     <div className="min-h-screen bg-sky-50 text-slate-800 font-sans selection:bg-indigo-500 selection:text-white flex flex-col justify-between">
       {/* Global Navigation Header */}
@@ -80,14 +88,31 @@ export function App() {
             {/* Firebase Live or Demo Mode Indicator Pill */}
             <button
               onClick={() => setShowFirebaseModal(true)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full border-2 font-bold text-xs shadow-sm transition ${
-                isLiveFirebase
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                  : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+              title={firebaseStatus.message}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full border-2 font-black text-xs shadow-sm transition ${
+                firebaseStatus.status === 'live'
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                  : firebaseStatus.status === 'error'
+                  ? 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100 animate-pulse'
+                  : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
               }`}
             >
-              <Database className="w-4 h-4" />
-              <span>{isLiveFirebase ? '🟢 Firebase Live' : '🟡 Demo Mode'}</span>
+              {firebaseStatus.status === 'live' ? (
+                <>
+                  <Database className="w-4 h-4 text-emerald-600" />
+                  <span>🟢 Firebase Live (ออนไลน์)</span>
+                </>
+              ) : firebaseStatus.status === 'error' ? (
+                <>
+                  <AlertTriangle className="w-4 h-4 text-rose-600" />
+                  <span>⚠️ Firebase Rules Error (คลิกแก้)</span>
+                </>
+              ) : (
+                <>
+                  <Database className="w-4 h-4 text-amber-600" />
+                  <span>🟡 Demo Mode (เฉพาะเครื่องนี้)</span>
+                </>
+              )}
             </button>
 
             {/* Sound Mute Toggle */}

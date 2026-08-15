@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { findClassroomByCode, joinClassroom, fetchStudentsInClassroom } from '../../firebase/db';
+import { isFirebaseInitialized } from '../../firebase/config';
 import { Classroom, Student } from '../../types';
 import { UserCheck, QrCode, Sparkles, Loader2, CheckCircle2, History, Users, AlertCircle } from 'lucide-react';
 import { sounds } from '../../utils/audio';
@@ -121,7 +122,12 @@ export const StudentJoin: React.FC<Props> = ({
       ) ? verifiedClassroom : await findClassroomByCode(code);
 
       if (!classroom) {
-        setErrorMsg(`ไม่พบห้องเรียนสำหรับรหัส "${code}" กรุณาตรวจสอบตัวอักษรกับคุณครู หรือสแกน QR Code`);
+        const isLive = isFirebaseInitialized();
+        if (!isLive) {
+          setErrorMsg(`ไม่พบห้องเรียน "${code}" (ขณะนี้แอปอยู่ในโหมด Demo เฉพาะเครื่อง หากคุณครูสร้างห้องเรียนจากเครื่องอื่น กรุณาให้คุณครูตั้งค่า Firebase เพื่อให้ออนไลน์ข้ามอุปกรณ์ได้)`);
+        } else {
+          setErrorMsg(`ไม่พบห้องเรียนสำหรับรหัส "${code}" กรุณาตรวจสอบตัวอักษรกับคุณครู หรือให้คุณครูเปิดดู Firestore Rules`);
+        }
         setLoading(false);
         return;
       }
