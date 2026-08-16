@@ -29,7 +29,12 @@ export const StudentAnalyticsModal: React.FC<Props> = ({
     setTimeout(() => setFeedbackSent(false), 2000);
   };
 
-  const gain = student.learningGain;
+  const preScore = student.preTestScore ?? student.assessments?.preTestScore;
+  const postScore = student.postTestScore ?? student.assessments?.postTestScore;
+  const gain = (postScore !== undefined && preScore !== undefined) ? (postScore - preScore) : student.learningGain;
+
+  const completedWsCount = Object.values(student.worksheets || {}).filter(w => w.completed).length;
+  const draftWsCount = Object.values(student.worksheets || {}).filter(w => !w.completed && Object.keys(w.answers || {}).length > 0).length;
 
   return (
     <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50 overflow-y-auto animate-fade-in">
@@ -52,7 +57,7 @@ export const StudentAnalyticsModal: React.FC<Props> = ({
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="bg-slate-800/80 p-3.5 rounded-2xl border border-slate-700 text-center">
             <div className="text-[10px] text-slate-400 font-bold uppercase">Pre-test</div>
-            <div className="text-xl font-black text-white mt-0.5">{student.preTestScore ?? '-'} / 10</div>
+            <div className="text-xl font-black text-white mt-0.5">{preScore !== undefined ? `${preScore} / 10` : '-'}</div>
           </div>
           <div className="bg-slate-800/80 p-3.5 rounded-2xl border border-slate-700 text-center">
             <div className="text-[10px] text-slate-400 font-bold uppercase">Game Score</div>
@@ -60,13 +65,31 @@ export const StudentAnalyticsModal: React.FC<Props> = ({
           </div>
           <div className="bg-slate-800/80 p-3.5 rounded-2xl border border-slate-700 text-center">
             <div className="text-[10px] text-slate-400 font-bold uppercase">Post-test</div>
-            <div className="text-xl font-black text-cyan-400 mt-0.5">{student.postTestScore ?? '-'} / 10</div>
+            <div className="text-xl font-black text-cyan-400 mt-0.5">{postScore !== undefined ? `${postScore} / 10` : '-'}</div>
           </div>
           <div className="bg-slate-800/80 p-3.5 rounded-2xl border border-slate-700 text-center">
             <div className="text-[10px] text-slate-400 font-bold uppercase">Learning Gain</div>
             <div className="text-xl font-black text-emerald-400 mt-0.5">
               {gain !== undefined ? (gain >= 0 ? `+${gain}` : `${gain}`) : '-'}
             </div>
+          </div>
+        </div>
+
+        {/* Worksheets Summary */}
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-slate-700/60 flex items-center justify-between flex-wrap gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <FileText className="w-4 h-4 text-indigo-400" />
+            <span className="font-bold text-slate-300">สถานะใบงานดิจิทัล (13 ใบงาน):</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="bg-emerald-950/60 text-emerald-300 border border-emerald-800/50 px-2.5 py-1 rounded-xl font-bold">
+              ✓ ส่งแล้ว {completedWsCount} ใบ
+            </span>
+            {draftWsCount > 0 && (
+              <span className="bg-amber-950/60 text-amber-300 border border-amber-800/50 px-2.5 py-1 rounded-xl font-bold">
+                ✎ งานค้าง {draftWsCount} ใบ
+              </span>
+            )}
           </div>
         </div>
 

@@ -52,10 +52,14 @@ export const WorksheetModal: React.FC<Props> = ({
       answers,
       completed: true,
       status: currentSubmission?.status === 'graded' ? 'graded' : 'pending',
-      score: currentSubmission?.score,
-      feedback: currentSubmission?.feedback,
       updatedAt: new Date().toISOString()
     };
+    if (currentSubmission?.score !== undefined) {
+      submission.score = currentSubmission.score;
+    }
+    if (currentSubmission?.feedback !== undefined) {
+      submission.feedback = currentSubmission.feedback;
+    }
     setSubmitted(true);
     onSubmit(submission);
   };

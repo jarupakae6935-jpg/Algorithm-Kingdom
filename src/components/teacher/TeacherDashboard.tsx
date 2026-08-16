@@ -631,7 +631,7 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
       {/* Individual Student Report Modal */}
       {selectedStudentForReport && selectedClassroom && (
         <StudentAnalyticsModal
-          student={selectedStudentForReport}
+          student={students.find(s => s.id === selectedStudentForReport.id) || selectedStudentForReport}
           classroom={selectedClassroom}
           onClose={() => setSelectedStudentForReport(null)}
         />
@@ -640,7 +640,7 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
       {/* Worksheet Review Modal */}
       {selectedStudentForWs && selectedClassroom && (
         <WorksheetReviewModal
-          student={selectedStudentForWs}
+          student={students.find(s => s.id === selectedStudentForWs.id) || selectedStudentForWs}
           classroom={selectedClassroom}
           onClose={() => setSelectedStudentForWs(null)}
         />
@@ -649,7 +649,7 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
       {/* Observation Checklist Modal */}
       {selectedStudentForObs && selectedClassroom && (
         <ObservationModal
-          student={selectedStudentForObs}
+          student={students.find(s => s.id === selectedStudentForObs.id) || selectedStudentForObs}
           classroom={selectedClassroom}
           onClose={() => setSelectedStudentForObs(null)}
         />

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Classroom, Student, LevelResult, WorksheetSubmission, CommandType } from '../../types';
-import { subscribeToClassroom, saveStudentLevelResult, saveAssessmentResult, saveWorksheetSubmission, saveStudentReflection, saveStudentLevelDraft } from '../../firebase/db';
+import { subscribeToClassroom, subscribeToStudent, saveStudentLevelResult, saveAssessmentResult, saveWorksheetSubmission, saveStudentReflection, saveStudentLevelDraft } from '../../firebase/db';
 import { GAME_LEVELS } from '../../data/gameData';
 import { GameMap } from '../game/GameMap';
 import { AlgorithmEngine } from '../game/AlgorithmEngine';
@@ -41,6 +41,16 @@ export const StudentDashboard: React.FC<Props> = ({
     return () => unsub();
   }, [classroom.id]);
 
+  // Subscribe to Student document changes (e.g. graded worksheets, teacher feedbacks, real-time score updates)
+  useEffect(() => {
+    const unsub = subscribeToStudent(classroom.id, student.id, (updatedStudent) => {
+      if (updatedStudent) {
+        setStudent(updatedStudent);
+      }
+    });
+    return () => unsub();
+  }, [classroom.id, student.id]);
+
   // Handle level completion from Game Engine
   const handleLevelComplete = async (res: LevelResult) => {
     // Update local state first
@@ -78,10 +88,8 @@ export const StudentDashboard: React.FC<Props> = ({
 
   // Handle Pre/Post Test complete
   const handleAssessmentComplete = async (type: 'pretest' | 'posttest', score: number) => {
-    let pre = student.preTestScore;
-    let post = student.postTestScore;
-    if (type === 'pretest') pre = score;
-    else post = score;
+    let pre = type === 'pretest' ? score : student.preTestScore;
+    let post = type === 'posttest' ? score : student.postTestScore;
 
     const gain = post !== undefined && pre !== undefined ? post - pre : undefined;
 
@@ -89,11 +97,15 @@ export const StudentDashboard: React.FC<Props> = ({
       ...prev,
       preTestScore: pre,
       postTestScore: post,
-      learningGain: gain
+      learningGain: gain,
+      assessments: {
+        ...(prev.assessments || {}),
+        [type === 'pretest' ? 'preTestScore' : 'postTestScore']: score,
+        [type === 'pretest' ? 'preTestCompletedAt' : 'postTestCompletedAt']: new Date().toISOString()
+      }
     }));
 
     await saveAssessmentResult(classroom.id, student.id, type, score);
-    setActiveTab('map');
   };
 
   // Handle Worksheet Submission (Draft or Final)
@@ -311,12 +323,16 @@ export const StudentDashboard: React.FC<Props> = ({
       ) : activeTab === 'pretest' ? (
         <PrePostTest
           type="pretest"
+          currentScore={student.preTestScore ?? student.assessments?.preTestScore}
           onComplete={(sc) => handleAssessmentComplete('pretest', sc)}
+          onBackToMap={() => setActiveTab('map')}
         />
       ) : activeTab === 'posttest' ? (
         <PrePostTest
           type="posttest"
+          currentScore={student.postTestScore ?? student.assessments?.postTestScore}
           onComplete={(sc) => handleAssessmentComplete('posttest', sc)}
+          onBackToMap={() => setActiveTab('map')}
         />
       ) : activeTab === 'worksheets' ? (
         <div className="bg-white p-6 rounded-3xl border-b-4 border-slate-200 space-y-5 shadow-sm">

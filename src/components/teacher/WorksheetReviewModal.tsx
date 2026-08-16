@@ -16,13 +16,35 @@ export const WorksheetReviewModal: React.FC<Props> = ({
   classroom,
   onClose
 }) => {
-  const [selectedWsId, setSelectedWsId] = useState<number>(1);
+  // Find first submitted or drafted worksheet to default to what needs review
+  const firstActiveWsId = React.useMemo(() => {
+    for (const w of WORKSHEETS) {
+      const sub = student.worksheets?.[w.id];
+      if (sub && (sub.completed || Object.keys(sub.answers || {}).length > 0)) {
+        return w.id;
+      }
+    }
+    return 1;
+  }, [student.worksheets]);
+
+  const [selectedWsId, setSelectedWsId] = useState<number>(firstActiveWsId);
   const currentSub: WorksheetSubmission | undefined = student.worksheets?.[selectedWsId];
   const wsDef = WORKSHEETS.find(w => w.id === selectedWsId) || WORKSHEETS[0];
 
-  const [score, setScore] = useState<number>(currentSub?.score || 10);
+  const [score, setScore] = useState<number>(currentSub?.score ?? 10);
   const [feedback, setFeedback] = useState<string>(currentSub?.feedback || '');
   const [saved, setSaved] = useState(false);
+
+  // Sync state whenever selected worksheet or student props update
+  React.useEffect(() => {
+    const sub = student.worksheets?.[selectedWsId];
+    setScore(sub?.score ?? 10);
+    setFeedback(sub?.feedback || '');
+  }, [selectedWsId, student.worksheets]);
+
+  const totalSubmitted = Object.values(student.worksheets || {}).filter(w => w.completed).length;
+  const totalDraft = Object.values(student.worksheets || {}).filter(w => !w.completed && Object.keys(w.answers || {}).length > 0).length;
+  const totalGraded = Object.values(student.worksheets || {}).filter(w => w.status === 'graded').length;
 
   const handleGrade = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,9 +59,24 @@ export const WorksheetReviewModal: React.FC<Props> = ({
       <div className="bg-slate-900 border border-slate-700 p-6 sm:p-8 rounded-3xl max-w-3xl w-full shadow-2xl text-white my-8 space-y-6">
         <div className="flex items-center justify-between border-b border-slate-800 pb-4">
           <div>
-            <span className="text-xs font-bold text-amber-400 bg-amber-950/60 px-3 py-1 rounded-full border border-amber-800/50">
-              📚 ตรวจใบงานดิจิทัล
-            </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold text-amber-400 bg-amber-950/60 px-3 py-1 rounded-full border border-amber-800/50">
+                📚 ตรวจใบงานดิจิทัล
+              </span>
+              <span className="text-[11px] font-black text-emerald-300 bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-800/50">
+                ✓ ส่งแล้ว {totalSubmitted} ใบ
+              </span>
+              {totalDraft > 0 && (
+                <span className="text-[11px] font-black text-amber-300 bg-amber-950/60 px-2.5 py-0.5 rounded-full border border-amber-800/50">
+                  ✎ งานค้าง {totalDraft} ใบ
+                </span>
+              )}
+              {totalGraded > 0 && (
+                <span className="text-[11px] font-black text-cyan-300 bg-cyan-950/60 px-2.5 py-0.5 rounded-full border border-cyan-800/50">
+                  ★ ตรวจแล้ว {totalGraded} ใบ
+                </span>
+              )}
+            </div>
             <h2 className="text-xl font-black text-white mt-1">งานของ: {student.name}</h2>
           </div>
           <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition">

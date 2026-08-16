@@ -6,17 +6,20 @@ import { sounds } from '../../utils/audio';
 
 interface Props {
   type: 'pretest' | 'posttest';
+  currentScore?: number;
   onComplete: (score: number) => void;
+  onBackToMap?: () => void;
 }
 
-export const PrePostTest: React.FC<Props> = ({ type, onComplete }) => {
+export const PrePostTest: React.FC<Props> = ({ type, currentScore, onComplete, onBackToMap }) => {
   const questions: TestQuestion[] = type === 'pretest' ? PRE_TEST_QUESTIONS : POST_TEST_QUESTIONS;
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
-  const [showExplanation, setShowExplanation] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
-  const [finalScore, setFinalScore] = useState(0);
+  const [finalScore, setFinalScore] = useState(currentScore ?? 0);
+  const [isRetaking, setIsRetaking] = useState(false);
 
+  const hasPreviousScore = currentScore !== undefined && !isRetaking;
   const currentQ = questions[currentIndex];
   const isLast = currentIndex === questions.length - 1;
 
@@ -29,7 +32,6 @@ export const PrePostTest: React.FC<Props> = ({ type, onComplete }) => {
     sounds.playClick();
     if (!isLast) {
       setCurrentIndex(i => i + 1);
-      setShowExplanation(false);
     } else {
       // Calculate score
       let correctCount = 0;
@@ -44,8 +46,59 @@ export const PrePostTest: React.FC<Props> = ({ type, onComplete }) => {
       setFinalScore(normalizedScore);
       setIsFinished(true);
       sounds.playSuccess();
+      // Immediately trigger save to Cloud Firestore & Local State
+      onComplete(normalizedScore);
     }
   };
+
+  // If already taken previously and not currently retaking
+  if (hasPreviousScore && !isFinished) {
+    return (
+      <div className="max-w-2xl mx-auto p-8 bg-white border-b-4 border-indigo-100 rounded-3xl shadow-xl text-slate-800 text-center space-y-6 animate-fade-in">
+        <div className="w-20 h-20 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto text-4xl border-2 border-emerald-200">
+          ✅
+        </div>
+        <div>
+          <span className="text-xs font-black text-indigo-700 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100">
+            {type === 'pretest' ? 'แบบทดสอบก่อนเรียน (Pre-test)' : 'แบบทดสอบหลังเรียน (Post-test)'}
+          </span>
+          <h2 className="text-2xl font-black text-indigo-900 mt-3">
+            คุณได้ทำแบบทดสอบนี้เรียบร้อยแล้ว
+          </h2>
+          <p className="text-xs font-bold text-slate-400 mt-1">คะแนนถูกบันทึกลงในระบบของคุณครูเรียบร้อยแล้ว</p>
+        </div>
+
+        <div className="bg-indigo-50/60 p-6 rounded-3xl border-2 border-indigo-100 max-w-sm mx-auto space-y-2">
+          <div className="text-xs font-extrabold text-slate-500 uppercase">คะแนนที่ได้</div>
+          <div className="text-4xl font-black text-emerald-600">
+            {currentScore} <span className="text-lg text-slate-400 font-bold">/ 10</span>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2 max-w-sm mx-auto">
+          {onBackToMap && (
+            <button
+              onClick={onBackToMap}
+              className="flex-1 px-6 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl shadow-md transition text-xs"
+            >
+              🎮 ไปยังแผนที่ภารกิจ
+            </button>
+          )}
+          <button
+            onClick={() => {
+              sounds.playClick();
+              setSelectedAnswers({});
+              setCurrentIndex(0);
+              setIsRetaking(true);
+            }}
+            className="flex-1 px-6 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-2xl border border-slate-200 transition text-xs"
+          >
+            🔄 ทำแบบทดสอบใหม่
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto p-6 bg-white border-b-4 border-indigo-100 rounded-3xl shadow-xl text-slate-800">
@@ -130,10 +183,13 @@ export const PrePostTest: React.FC<Props> = ({ type, onComplete }) => {
           </div>
 
           <button
-            onClick={() => onComplete(finalScore)}
-            className="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl shadow-md transition"
+            onClick={() => {
+              if (onBackToMap) onBackToMap();
+              else onComplete(finalScore);
+            }}
+            className="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl shadow-md transition text-xs"
           >
-            เข้าสู่ภารกิจ
+            🎮 เข้าสู่ภารกิจ (ไปยังแผนที่)
           </button>
         </div>
       )}

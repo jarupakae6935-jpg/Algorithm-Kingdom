@@ -444,6 +444,21 @@ export async function removeStudentFromClassroom(classroomId: string, studentId:
 }
 
 // Real-time Subscriptions
+export function sanitizeForFirestore<T>(data: T): T {
+  if (data === undefined) return null as any;
+  if (data === null || typeof data !== 'object') return data;
+  if (Array.isArray(data)) {
+    return data.map(item => sanitizeForFirestore(item)) as any;
+  }
+  const cleanObj: Record<string, any> = {};
+  for (const [key, value] of Object.entries(data as Record<string, any>)) {
+    if (value !== undefined) {
+      cleanObj[key] = sanitizeForFirestore(value);
+    }
+  }
+  return cleanObj as T;
+}
+
 export function subscribeToClassroom(classroomId: string, callback: (classroom: Classroom | null) => void): Unsubscribe {
   const { db } = initFirebase();
 
@@ -482,6 +497,29 @@ export function subscribeToStudents(classroomId: string, callback: (students: St
   );
 }
 
+export function subscribeToStudent(
+  classroomId: string,
+  studentId: string,
+  callback: (student: Student | null) => void
+): Unsubscribe {
+  const { db } = initFirebase();
+  const studentRef = doc(db, 'classrooms', classroomId, 'students', studentId);
+
+  return onSnapshot(
+    studentRef,
+    (snap) => {
+      if (snap.exists()) {
+        callback(snap.data() as Student);
+      } else {
+        callback(null);
+      }
+    },
+    (error) => {
+      console.error('Firestore subscribeToStudent error:', error);
+    }
+  );
+}
+
 // Save in-progress draft block commands for a level
 export async function saveStudentLevelDraft(
   classroomId: string,
@@ -497,7 +535,7 @@ export async function saveStudentLevelDraft(
     if (snap.exists()) {
       const current = snap.data() as Student;
       const draftLevels = { ...(current.draftLevels || {}), [levelId]: commands };
-      await updateDoc(studentRef, { draftLevels });
+      await updateDoc(studentRef, sanitizeForFirestore({ draftLevels }));
     }
   } catch (err) {
     console.error('saveStudentLevelDraft error:', err);
@@ -529,13 +567,13 @@ export async function saveStudentLevelResult(
       }
       const progress = Math.min(100, Math.round((count / 12) * 100));
 
-      await updateDoc(studentRef, {
+      await updateDoc(studentRef, sanitizeForFirestore({
         levels: levels,
         totalScore: total,
         completedLevelsCount: count,
         progressPercentage: progress,
         status: count >= 12 ? 'completed' : 'playing'
-      });
+      }));
     }
   } catch (err) {
     console.error('saveStudentLevelResult error:', err);
@@ -557,7 +595,7 @@ export async function saveAssessmentResult(
     const snap = await getDoc(studentRef);
     if (snap.exists()) {
       const st = snap.data() as Student;
-      const assessments = { ...st.assessments };
+      const assessments = { ...(st.assessments || {}) };
       let pre = st.preTestScore;
       let post = st.postTestScore;
 
@@ -571,14 +609,21 @@ export async function saveAssessmentResult(
         post = score;
       }
 
-      const gain = post !== undefined && pre !== undefined ? post - pre : undefined;
+      const updateData: Record<string, any> = {
+        assessments: assessments
+      };
 
-      await updateDoc(studentRef, {
-        assessments: assessments,
-        preTestScore: pre,
-        postTestScore: post,
-        learningGain: gain
-      });
+      if (pre !== undefined && pre !== null) {
+        updateData.preTestScore = pre;
+      }
+      if (post !== undefined && post !== null) {
+        updateData.postTestScore = post;
+      }
+      if (post !== undefined && post !== null && pre !== undefined && pre !== null) {
+        updateData.learningGain = post - pre;
+      }
+
+      await updateDoc(studentRef, sanitizeForFirestore(updateData));
     }
   } catch (err) {
     console.error('saveAssessmentResult error:', err);
@@ -599,8 +644,25 @@ export async function saveWorksheetSubmission(
     const snap = await getDoc(studentRef);
     if (snap.exists()) {
       const st = snap.data() as Student;
-      const worksheets = { ...st.worksheets, [submission.worksheetId]: submission };
-      await updateDoc(studentRef, { worksheets });
+      const cleanSub: WorksheetSubmission = {
+        worksheetId: submission.worksheetId,
+        answers: submission.answers || {},
+        completed: Boolean(submission.completed),
+        status: submission.status || (submission.completed ? 'pending' : 'draft'),
+        updatedAt: submission.updatedAt || new Date().toISOString()
+      };
+      if (submission.score !== undefined && submission.score !== null) {
+        cleanSub.score = submission.score;
+      }
+      if (submission.feedback !== undefined && submission.feedback !== null) {
+        cleanSub.feedback = submission.feedback;
+      }
+
+      const worksheets = { ...(st.worksheets || {}), [cleanSub.worksheetId]: cleanSub };
+      await updateDoc(studentRef, sanitizeForFirestore({
+        worksheets: worksheets,
+        status: submission.completed ? 'idle' : 'working_worksheet'
+      }));
     }
   } catch (err) {
     console.error('saveWorksheetSubmission error:', err);
@@ -623,12 +685,22 @@ export async function gradeWorksheetSubmission(
     const snap = await getDoc(studentRef);
     if (snap.exists()) {
       const st = snap.data() as Student;
-      if (st.worksheets && st.worksheets[worksheetId]) {
-        st.worksheets[worksheetId].score = score;
-        st.worksheets[worksheetId].feedback = feedback;
-        st.worksheets[worksheetId].status = 'graded';
-        await updateDoc(studentRef, { worksheets: st.worksheets });
-      }
+      const currentWs = st.worksheets?.[worksheetId] || {
+        worksheetId,
+        answers: {},
+        completed: true,
+        updatedAt: new Date().toISOString()
+      };
+      const updatedWs: WorksheetSubmission = {
+        ...currentWs,
+        score: score,
+        feedback: feedback || '',
+        status: 'graded',
+        updatedAt: new Date().toISOString()
+      };
+
+      const worksheets = { ...(st.worksheets || {}), [worksheetId]: updatedWs };
+      await updateDoc(studentRef, sanitizeForFirestore({ worksheets }));
     }
   } catch (err) {
     console.error('gradeWorksheetSubmission error:', err);
