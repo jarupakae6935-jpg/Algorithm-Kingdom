@@ -16,10 +16,15 @@ export const WorksheetReviewModal: React.FC<Props> = ({
   classroom,
   onClose
 }) => {
+  // Helper to safely get worksheet submission
+  const getSub = (wsId: number): WorksheetSubmission | undefined => {
+    return student.worksheets?.[wsId] || (student.worksheets as any)?.[String(wsId)];
+  };
+
   // Find first submitted or drafted worksheet to default to what needs review
   const firstActiveWsId = React.useMemo(() => {
     for (const w of WORKSHEETS) {
-      const sub = student.worksheets?.[w.id];
+      const sub = student.worksheets?.[w.id] || (student.worksheets as any)?.[String(w.id)];
       if (sub && (sub.completed || Object.keys(sub.answers || {}).length > 0)) {
         return w.id;
       }
@@ -28,7 +33,7 @@ export const WorksheetReviewModal: React.FC<Props> = ({
   }, [student.worksheets]);
 
   const [selectedWsId, setSelectedWsId] = useState<number>(firstActiveWsId);
-  const currentSub: WorksheetSubmission | undefined = student.worksheets?.[selectedWsId];
+  const currentSub: WorksheetSubmission | undefined = getSub(selectedWsId);
   const wsDef = WORKSHEETS.find(w => w.id === selectedWsId) || WORKSHEETS[0];
 
   const [score, setScore] = useState<number>(currentSub?.score ?? 10);
@@ -37,14 +42,15 @@ export const WorksheetReviewModal: React.FC<Props> = ({
 
   // Sync state whenever selected worksheet or student props update
   React.useEffect(() => {
-    const sub = student.worksheets?.[selectedWsId];
+    const sub = getSub(selectedWsId);
     setScore(sub?.score ?? 10);
     setFeedback(sub?.feedback || '');
   }, [selectedWsId, student.worksheets]);
 
-  const totalSubmitted = Object.values(student.worksheets || {}).filter(w => w.completed).length;
-  const totalDraft = Object.values(student.worksheets || {}).filter(w => !w.completed && Object.keys(w.answers || {}).length > 0).length;
-  const totalGraded = Object.values(student.worksheets || {}).filter(w => w.status === 'graded').length;
+  const allWorksheets = Object.values(student.worksheets || {}) as WorksheetSubmission[];
+  const totalSubmitted = allWorksheets.filter(w => w && (w.completed || w.status === 'pending' || w.status === 'graded')).length;
+  const totalDraft = allWorksheets.filter(w => w && !w.completed && (w.status === 'draft' || Object.keys(w.answers || {}).length > 0)).length;
+  const totalGraded = allWorksheets.filter(w => w && w.status === 'graded').length;
 
   const handleGrade = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,7 +93,7 @@ export const WorksheetReviewModal: React.FC<Props> = ({
         {/* Worksheet Selector Bar */}
         <div className="flex gap-2 overflow-x-auto pb-2">
           {WORKSHEETS.map((w) => {
-            const sub = student.worksheets?.[w.id];
+            const sub = getSub(w.id);
             const hasCompleted = !!sub?.completed;
             const hasDraft = !hasCompleted && Object.keys(sub?.answers || {}).length > 0;
             const isSelected = selectedWsId === w.id;
@@ -96,8 +102,8 @@ export const WorksheetReviewModal: React.FC<Props> = ({
                 key={w.id}
                 onClick={() => {
                   setSelectedWsId(w.id);
-                  setScore(student.worksheets?.[w.id]?.score || 10);
-                  setFeedback(student.worksheets?.[w.id]?.feedback || '');
+                  setScore(sub?.score || 10);
+                  setFeedback(sub?.feedback || '');
                   sounds.playClick();
                 }}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition border ${

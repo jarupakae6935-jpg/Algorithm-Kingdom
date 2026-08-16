@@ -465,8 +465,14 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
                             รายงาน
                           </button>
                           {(() => {
-                            const completedWs = (Object.values(std.worksheets || {}) as WorksheetSubmission[]).filter(w => w.completed).length;
-                            const draftWs = (Object.values(std.worksheets || {}) as WorksheetSubmission[]).filter(w => !w.completed && Object.keys(w.answers || {}).length > 0).length;
+                            const wsList = Object.values(std.worksheets || {}) as WorksheetSubmission[];
+                            const uniqueMap = new Map<number, WorksheetSubmission>();
+                            wsList.forEach(w => {
+                              if (w && w.worksheetId) uniqueMap.set(Number(w.worksheetId), w);
+                            });
+                            const items = Array.from(uniqueMap.values());
+                            const completedWs = items.filter(w => w.completed || w.status === 'pending' || w.status === 'graded').length;
+                            const draftWs = items.filter(w => !w.completed && (w.status === 'draft' || Object.keys(w.answers || {}).length > 0)).length;
                             return (
                               <button
                                 onClick={() => setSelectedStudentForWs(std)}

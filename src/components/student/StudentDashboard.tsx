@@ -110,7 +110,12 @@ export const StudentDashboard: React.FC<Props> = ({
 
   // Handle Worksheet Submission (Draft or Final)
   const handleWorksheetSubmit = async (sub: WorksheetSubmission) => {
-    const updated = { ...student.worksheets, [sub.worksheetId]: sub };
+    const wsIdNum = Number(sub.worksheetId);
+    const updated = {
+      ...student.worksheets,
+      [wsIdNum]: sub,
+      [String(wsIdNum)]: sub
+    };
     setStudent(prev => ({ ...prev, worksheets: updated }));
     if (sub.completed) {
       setSelectedWorksheetId(null);
@@ -361,7 +366,7 @@ export const StudentDashboard: React.FC<Props> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {Array.from({ length: 13 }).map((_, idx) => {
               const wsId = idx + 1;
-              const sub = student.worksheets?.[wsId];
+              const sub = student.worksheets?.[wsId] || (student.worksheets as any)?.[String(wsId)];
               const isCompleted = !!sub?.completed;
               const answeredCount = Object.keys(sub?.answers || {}).length;
               const isDraft = !isCompleted && answeredCount > 0;

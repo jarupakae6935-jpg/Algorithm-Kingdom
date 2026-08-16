@@ -350,16 +350,67 @@ export async function fetchStudentsInClassroom(classroomId: string): Promise<Stu
   return students.sort((a, b) => a.name.localeCompare(b.name, 'th'));
 }
 
-// Join Classroom (Student) - Re-links existing student by name or creates new one
-export async function joinClassroom(classroomId: string, studentName: string): Promise<Student> {
+// Normalize Thai name for resilient matching across logins and rosters
+export function normalizeThaiName(name: string): string {
+  if (!name) return '';
+  let n = name.trim().toLowerCase();
+  // Remove all periods and extra whitespace
+  n = n.replace(/\./g, '').replace(/\s+/g, ' ');
+  // Strip common Thai title prefixes
+  const prefixes = [
+    'เด็กชาย', 'เด็กหญิง', 'ดช', 'ดญ',
+    'นาย', 'นางสาว', 'นส', 'น้อง',
+    'ด ญ', 'ด ช', 'น ส'
+  ];
+  for (const p of prefixes) {
+    if (n.startsWith(p)) {
+      n = n.substring(p.length).trim();
+      break;
+    }
+  }
+  // Strip parentheses notes like (ป.4/1) or (เลขที่ 1)
+  n = n.replace(/\([^)]*\)/g, '').trim();
+  // Remove all non-alphanumeric/thai spaces
+  return n.replace(/\s+/g, '');
+}
+
+// Join Classroom (Student) - Re-links existing student by ID/name or creates new one
+export async function joinClassroom(classroomId: string, studentName: string, explicitStudentId?: string): Promise<Student> {
   const trimmedName = studentName.trim();
   const { auth, db } = initFirebase();
 
-  // Check if student already exists in this classroom
+  // 1. If explicit studentId provided, fetch directly
+  if (explicitStudentId) {
+    try {
+      const directRef = doc(db, 'classrooms', classroomId, 'students', explicitStudentId);
+      const directSnap = await getDoc(directRef);
+      if (directSnap.exists()) {
+        const studentData = directSnap.data() as Student;
+        await updateDoc(directRef, { status: 'idle' }).catch(() => {});
+        return {
+          ...studentData,
+          status: 'idle'
+        };
+      }
+    } catch (e) {
+      console.warn('Direct student lookup by ID note:', e);
+    }
+  }
+
+  // 2. Search existing students in this classroom using multi-level resilient matching
   const existingList = await fetchStudentsInClassroom(classroomId);
-  const existing = existingList.find(
+  const normalizedInput = normalizeThaiName(trimmedName);
+
+  let existing = existingList.find(
     s => s.name.trim().toLowerCase() === trimmedName.toLowerCase()
   );
+
+  if (!existing && normalizedInput) {
+    existing = existingList.find(s => {
+      const normS = normalizeThaiName(s.name);
+      return normS === normalizedInput || (normS.length >= 3 && (normS.includes(normalizedInput) || normalizedInput.includes(normS)));
+    });
+  }
 
   if (existing) {
     const updatedStudent: Student = {
@@ -644,8 +695,9 @@ export async function saveWorksheetSubmission(
     const snap = await getDoc(studentRef);
     if (snap.exists()) {
       const st = snap.data() as Student;
+      const wsIdNum = Number(submission.worksheetId);
       const cleanSub: WorksheetSubmission = {
-        worksheetId: submission.worksheetId,
+        worksheetId: wsIdNum,
         answers: submission.answers || {},
         completed: Boolean(submission.completed),
         status: submission.status || (submission.completed ? 'pending' : 'draft'),
@@ -658,11 +710,27 @@ export async function saveWorksheetSubmission(
         cleanSub.feedback = submission.feedback;
       }
 
-      const worksheets = { ...(st.worksheets || {}), [cleanSub.worksheetId]: cleanSub };
-      await updateDoc(studentRef, sanitizeForFirestore({
-        worksheets: worksheets,
+      // Preserve all existing worksheets
+      const existingWorksheets: Record<string, WorksheetSubmission> = {};
+      if (st.worksheets) {
+        if (Array.isArray(st.worksheets)) {
+          st.worksheets.forEach((w: any) => {
+            if (w && w.worksheetId) {
+              existingWorksheets[String(w.worksheetId)] = w;
+            }
+          });
+        } else {
+          Object.entries(st.worksheets).forEach(([k, v]) => {
+            if (v) existingWorksheets[k] = v;
+          });
+        }
+      }
+      existingWorksheets[String(wsIdNum)] = cleanSub;
+
+      await setDoc(studentRef, sanitizeForFirestore({
+        worksheets: existingWorksheets,
         status: submission.completed ? 'idle' : 'working_worksheet'
-      }));
+      }), { merge: true });
     }
   } catch (err) {
     console.error('saveWorksheetSubmission error:', err);
@@ -685,8 +753,9 @@ export async function gradeWorksheetSubmission(
     const snap = await getDoc(studentRef);
     if (snap.exists()) {
       const st = snap.data() as Student;
-      const currentWs = st.worksheets?.[worksheetId] || {
-        worksheetId,
+      const wsIdNum = Number(worksheetId);
+      const currentWs = st.worksheets?.[wsIdNum] || st.worksheets?.[String(wsIdNum)] || {
+        worksheetId: wsIdNum,
         answers: {},
         completed: true,
         updatedAt: new Date().toISOString()
@@ -699,8 +768,23 @@ export async function gradeWorksheetSubmission(
         updatedAt: new Date().toISOString()
       };
 
-      const worksheets = { ...(st.worksheets || {}), [worksheetId]: updatedWs };
-      await updateDoc(studentRef, sanitizeForFirestore({ worksheets }));
+      const existingWorksheets: Record<string, WorksheetSubmission> = {};
+      if (st.worksheets) {
+        if (Array.isArray(st.worksheets)) {
+          st.worksheets.forEach((w: any) => {
+            if (w && w.worksheetId) {
+              existingWorksheets[String(w.worksheetId)] = w;
+            }
+          });
+        } else {
+          Object.entries(st.worksheets).forEach(([k, v]) => {
+            if (v) existingWorksheets[k] = v;
+          });
+        }
+      }
+      existingWorksheets[String(wsIdNum)] = updatedWs;
+
+      await setDoc(studentRef, sanitizeForFirestore({ worksheets: existingWorksheets }), { merge: true });
     }
   } catch (err) {
     console.error('gradeWorksheetSubmission error:', err);

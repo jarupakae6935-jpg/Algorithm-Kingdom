@@ -17,6 +17,7 @@ interface SavedSession {
   classroomId: string;
   classroomName: string;
   studentName: string;
+  studentId?: string;
 }
 
 export const StudentJoin: React.FC<Props> = ({
@@ -25,6 +26,7 @@ export const StudentJoin: React.FC<Props> = ({
 }) => {
   const [roomCodeInput, setRoomCodeInput] = useState('');
   const [studentNameInput, setStudentNameInput] = useState('');
+  const [selectedStudentId, setSelectedStudentId] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -95,12 +97,13 @@ export const StudentJoin: React.FC<Props> = ({
     }
   };
 
-  const handleJoin = async (e?: React.FormEvent, customName?: string, customCode?: string) => {
+  const handleJoin = async (e?: React.FormEvent, customName?: string, customCode?: string, customStudentId?: string) => {
     if (e) e.preventDefault();
     setErrorMsg(null);
 
     const code = (customCode || roomCodeInput).trim().toUpperCase();
     const name = (customName || studentNameInput).trim();
+    const targetStudentId = customStudentId || selectedStudentId;
 
     if (!code) {
       setErrorMsg('กรุณากรอกรหัสห้องเรียน');
@@ -133,15 +136,16 @@ export const StudentJoin: React.FC<Props> = ({
         return;
       }
 
-      const joinedStudent = await joinClassroom(classroom.id, name);
+      const joinedStudent = await joinClassroom(classroom.id, name, targetStudentId);
 
-      // Save session for easy resume
+      // Save session with verified studentId for exact re-linking
       try {
         localStorage.setItem(LAST_SESSION_KEY, JSON.stringify({
           roomCode: classroom.roomCode,
           classroomId: classroom.id,
           classroomName: classroom.name,
-          studentName: joinedStudent.name
+          studentName: joinedStudent.name,
+          studentId: joinedStudent.id
         }));
       } catch (err) {
         console.warn('Failed to save session', err);
@@ -161,7 +165,8 @@ export const StudentJoin: React.FC<Props> = ({
     if (!savedSession) return;
     setRoomCodeInput(savedSession.roomCode);
     setStudentNameInput(savedSession.studentName);
-    await handleJoin(undefined, savedSession.studentName, savedSession.roomCode);
+    setSelectedStudentId(savedSession.studentId);
+    await handleJoin(undefined, savedSession.studentName, savedSession.roomCode, savedSession.studentId);
   };
 
   return (
@@ -262,17 +267,24 @@ export const StudentJoin: React.FC<Props> = ({
             {rosterStudents.length > 0 && (
               <div className="mb-2">
                 <select
-                  value={studentNameInput}
+                  value={selectedStudentId || ''}
                   onChange={(e) => {
-                    if (e.target.value) {
-                      setStudentNameInput(e.target.value);
+                    const selId = e.target.value;
+                    if (selId) {
+                      const found = rosterStudents.find(s => s.id === selId);
+                      if (found) {
+                        setSelectedStudentId(found.id);
+                        setStudentNameInput(found.name);
+                      }
+                    } else {
+                      setSelectedStudentId(undefined);
                     }
                   }}
                   className="w-full px-3.5 py-2.5 bg-indigo-50/70 border-2 border-indigo-200 focus:border-indigo-600 rounded-2xl text-xs font-black text-indigo-950 outline-none transition"
                 >
                   <option value="">-- หรือเลือกชื่อของคุณจากรายชื่อห้อง --</option>
                   {rosterStudents.map((s) => (
-                    <option key={s.id} value={s.name}>
+                    <option key={s.id} value={s.id}>
                       {s.name} {s.totalScore > 0 ? `(มี ${s.totalScore} คะแนน)` : ''}
                     </option>
                   ))}
@@ -283,7 +295,10 @@ export const StudentJoin: React.FC<Props> = ({
             <input
               type="text"
               value={studentNameInput}
-              onChange={(e) => setStudentNameInput(e.target.value)}
+              onChange={(e) => {
+                setStudentNameInput(e.target.value);
+                setSelectedStudentId(undefined);
+              }}
               placeholder="พิมพ์ชื่อ เช่น ด.ช. ก้องภพ หรือ น้องเอ"
               maxLength={40}
               className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 focus:border-indigo-600 rounded-2xl text-slate-800 font-bold placeholder-slate-400 outline-none transition text-sm"

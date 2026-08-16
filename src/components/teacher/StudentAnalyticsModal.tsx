@@ -1,5 +1,5 @@
 import React from 'react';
-import { Student, Classroom } from '../../types';
+import { Student, Classroom, WorksheetSubmission } from '../../types';
 import { GAME_LEVELS } from '../../data/gameData';
 import { X, Award, FileText, Send, Star, CheckCircle, HelpCircle } from 'lucide-react';
 import { sendTeacherFeedback } from '../../firebase/db';
@@ -33,8 +33,14 @@ export const StudentAnalyticsModal: React.FC<Props> = ({
   const postScore = student.postTestScore ?? student.assessments?.postTestScore;
   const gain = (postScore !== undefined && preScore !== undefined) ? (postScore - preScore) : student.learningGain;
 
-  const completedWsCount = Object.values(student.worksheets || {}).filter(w => w.completed).length;
-  const draftWsCount = Object.values(student.worksheets || {}).filter(w => !w.completed && Object.keys(w.answers || {}).length > 0).length;
+  const wsList = Object.values(student.worksheets || {}) as WorksheetSubmission[];
+  const uniqueMap = new Map<number, WorksheetSubmission>();
+  wsList.forEach(w => {
+    if (w && w.worksheetId) uniqueMap.set(Number(w.worksheetId), w);
+  });
+  const items = Array.from(uniqueMap.values());
+  const completedWsCount = items.filter(w => w.completed || w.status === 'pending' || w.status === 'graded').length;
+  const draftWsCount = items.filter(w => !w.completed && (w.status === 'draft' || Object.keys(w.answers || {}).length > 0)).length;
 
   return (
     <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50 overflow-y-auto animate-fade-in">
