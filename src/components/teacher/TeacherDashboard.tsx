@@ -113,17 +113,13 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
             className={`px-3.5 py-2 border font-black rounded-2xl text-xs transition flex items-center gap-1.5 ${
               fbStatus?.status === 'live'
                 ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
-                : fbStatus?.status === 'error'
-                ? 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-300 animate-pulse'
-                : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300'
+                : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-300 animate-pulse'
             }`}
           >
             {fbStatus?.status === 'live' ? (
               <>🟢 Firebase Live</>
-            ) : fbStatus?.status === 'error' ? (
-              <>⚠️ แก้ Firestore Rules</>
             ) : (
-              <>🔥 Firebase Setup</>
+              <>⚠️ แก้ Firestore Rules</>
             )}
           </button>
 
@@ -143,29 +139,19 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
         </div>
       </div>
 
-      {/* Warning/Guidance Banner if in Demo Mode or error */}
-      {fbStatus && fbStatus.status !== 'live' && (
-        <div className={`p-4 rounded-3xl border-2 flex flex-wrap items-center justify-between gap-3 shadow-sm ${
-          fbStatus.status === 'error'
-            ? 'bg-rose-50 border-rose-300 text-rose-900'
-            : 'bg-amber-50 border-amber-300 text-amber-900'
-        }`}>
+      {/* Warning/Guidance Banner if Firestore permissions error */}
+      {fbStatus && fbStatus.status === 'error' && (
+        <div className="p-4 rounded-3xl border-2 flex flex-wrap items-center justify-between gap-3 shadow-sm bg-rose-50 border-rose-300 text-rose-900">
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
-              fbStatus.status === 'error' ? 'bg-rose-200 text-rose-700' : 'bg-amber-200 text-amber-800'
-            }`}>
-              {fbStatus.status === 'error' ? <AlertTriangle className="w-5 h-5" /> : <Database className="w-5 h-5" />}
+            <div className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 bg-rose-200 text-rose-700">
+              <AlertTriangle className="w-5 h-5" />
             </div>
             <div>
               <h4 className="text-xs font-black">
-                {fbStatus.status === 'error'
-                  ? '⚠️ Firestore Rules ยังไม่อนุญาตให้นักเรียนเข้าถึง'
-                  : '💡 ขณะนี้อยู่ใน Demo Mode (ข้อมูลบันทึกเฉพาะในเครื่องนี้)'}
+                ⚠️ Firestore Rules ยังไม่อนุญาตให้นักเรียนเข้าถึง
               </h4>
               <p className="text-[11px] font-bold text-slate-600 mt-0.5">
-                {fbStatus.status === 'error'
-                  ? 'นักเรียนจากเครื่องอื่นจะไม่สามารถนำรหัสเข้าห้องเรียนได้ กรุณากดตั้งค่า Rules'
-                  : 'หากต้องการให้นักเรียนนำรหัสเข้าชั้นเรียนจากแท็บเล็ต/มือถือเครื่องอื่น กรุณาเชื่อมต่อ Firebase Cloud'}
+                นักเรียนจากเครื่องอื่นจะไม่สามารถนำรหัสเข้าห้องเรียนได้ กรุณากดตั้งค่า Firestore Rules ให้ allow read, write: if true;
               </p>
             </div>
           </div>
@@ -173,7 +159,7 @@ export const TeacherDashboard: React.FC<Props> = ({ teacher, onLogout }) => {
             onClick={() => setShowFirebaseModal(true)}
             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl text-xs shadow transition shrink-0"
           >
-            {fbStatus.status === 'error' ? '🛡️ ดูโค้ด Firestore Rules' : '🔥 เชื่อมต่อ Firebase ฟรี'}
+            🛡️ ดูโค้ด Firestore Rules
           </button>
         </div>
       )}

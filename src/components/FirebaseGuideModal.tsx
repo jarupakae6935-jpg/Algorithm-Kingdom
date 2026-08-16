@@ -272,9 +272,9 @@ export const FirebaseGuideModal: React.FC<Props> = ({ onClose, onConfigSaved }) 
               <button
                 type="button"
                 onClick={handleClear}
-                className="px-4 py-3 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-black rounded-2xl text-xs transition"
+                className="px-4 py-3 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 font-black rounded-2xl text-xs transition"
               >
-                ล้าง Config (กลับ Demo Mode)
+                รีเซ็ตเป็นค่าเริ่มต้น
               </button>
             </div>
             {saved && <div className="text-xs text-emerald-600 text-center font-black">บันทึก Config เรียบร้อย!</div>}

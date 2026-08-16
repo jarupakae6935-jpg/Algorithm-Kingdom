@@ -122,12 +122,7 @@ export const StudentJoin: React.FC<Props> = ({
       ) ? verifiedClassroom : await findClassroomByCode(code);
 
       if (!classroom) {
-        const isLive = isFirebaseInitialized();
-        if (!isLive) {
-          setErrorMsg(`ไม่พบห้องเรียน "${code}" (ขณะนี้แอปอยู่ในโหมด Demo เฉพาะเครื่อง หากคุณครูสร้างห้องเรียนจากเครื่องอื่น กรุณาให้คุณครูตั้งค่า Firebase เพื่อให้ออนไลน์ข้ามอุปกรณ์ได้)`);
-        } else {
-          setErrorMsg(`ไม่พบห้องเรียนสำหรับรหัส "${code}" กรุณาตรวจสอบตัวอักษรกับคุณครู หรือให้คุณครูเปิดดู Firestore Rules`);
-        }
+        setErrorMsg(`ไม่พบห้องเรียนสำหรับรหัส "${code}" กรุณาตรวจสอบรหัสห้องเรียน 4 ตัวท้ายกับคุณครูผู้สอน`);
         setLoading(false);
         return;
       }

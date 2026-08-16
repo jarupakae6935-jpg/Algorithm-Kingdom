@@ -22,8 +22,9 @@ export function App() {
   const [showFirebaseModal, setShowFirebaseModal] = useState(false);
   const [verifyCertId, setVerifyCertId] = useState<string | null>(null);
   const [firebaseStatus, setFirebaseStatus] = useState<FirebaseConnectionStatus>({
-    status: isFirebaseInitialized() ? 'live' : 'demo',
-    message: isFirebaseInitialized() ? 'กำลังตรวจสอบการเชื่อมต่อ...' : 'โหมดตัวอย่าง (Demo Mode)'
+    status: 'live',
+    message: 'กำลังตรวจสอบการเชื่อมต่อ...',
+    projectId: 'algorithm-adventure-2bbec'
   });
 
   useEffect(() => {
@@ -85,32 +86,25 @@ export function App() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Firebase Live or Demo Mode Indicator Pill */}
+            {/* Firebase Live Cloud Indicator Pill */}
             <button
               onClick={() => setShowFirebaseModal(true)}
               title={firebaseStatus.message}
               className={`flex items-center gap-2 px-4 py-2 rounded-full border-2 font-black text-xs shadow-sm transition ${
                 firebaseStatus.status === 'live'
                   ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
-                  : firebaseStatus.status === 'error'
-                  ? 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100 animate-pulse'
-                  : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                  : 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100 animate-pulse'
               }`}
             >
               {firebaseStatus.status === 'live' ? (
                 <>
                   <Database className="w-4 h-4 text-emerald-600" />
-                  <span>🟢 Firebase Live (ออนไลน์)</span>
-                </>
-              ) : firebaseStatus.status === 'error' ? (
-                <>
-                  <AlertTriangle className="w-4 h-4 text-rose-600" />
-                  <span>⚠️ Firebase Rules Error (คลิกแก้)</span>
+                  <span>🟢 Cloud Database</span>
                 </>
               ) : (
                 <>
-                  <Database className="w-4 h-4 text-amber-600" />
-                  <span>🟡 Demo Mode (เฉพาะเครื่องนี้)</span>
+                  <AlertTriangle className="w-4 h-4 text-rose-600" />
+                  <span>⚠️ Firebase Rules (คลิกตั้งค่า)</span>
                 </>
               )}
             </button>

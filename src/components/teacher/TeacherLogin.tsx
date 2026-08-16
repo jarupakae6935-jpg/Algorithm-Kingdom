@@ -54,16 +54,6 @@ export const TeacherLogin: React.FC<Props> = ({
     }
   };
 
-  const handleDemoLogin = () => {
-    sounds.playSuccess();
-    onTeacherLoggedIn({
-      uid: 'teacher-demo-01',
-      name: 'ครูสายชล สมาร์ท',
-      email: 'teacher@school.ac.th',
-      role: 'teacher'
-    });
-  };
-
   return (
     <div className="min-h-[75vh] flex items-center justify-center p-4">
       <div className="bg-white border-b-4 border-indigo-100 p-8 rounded-3xl max-w-md w-full shadow-xl space-y-6">
@@ -163,18 +153,7 @@ export const TeacherLogin: React.FC<Props> = ({
             {isRegister ? 'มีบัญชีแล้ว? เข้าสู่ระบบ' : 'ยังไม่มีบัญชีครู? สร้างบัญชีครู'}
           </button>
 
-          <div className="relative border-t-2 border-slate-100 pt-3">
-            <button
-              type="button"
-              onClick={handleDemoLogin}
-              className="w-full py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-black rounded-2xl border-2 border-amber-200 transition flex items-center justify-center gap-2 shadow-sm"
-            >
-              <Sparkles className="w-4 h-4 text-amber-600" />
-              ทดลองใช้งานใน DEMO MODE (ไม่ต้องใช้อีเมล)
-            </button>
-          </div>
-
-          <div className="pt-2">
+          <div className="pt-2 border-t-2 border-slate-100">
             <button
               onClick={onSwitchToStudent}
               className="text-xs text-slate-500 hover:text-slate-700 font-bold underline"

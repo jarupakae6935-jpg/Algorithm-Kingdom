@@ -5,7 +5,16 @@ import { FirebaseConfigType } from '../types';
 
 const DEFAULT_CONFIG_KEY = 'custom_firebase_config';
 
-export function getStoredFirebaseConfig(): FirebaseConfigType | null {
+export const DEFAULT_FIREBASE_CONFIG: FirebaseConfigType = {
+  apiKey: "AIzaSyC1yjNYZQk9S19A5142hosWjPulyVeXDtQ",
+  authDomain: "algorithm-adventure-2bbec.firebaseapp.com",
+  projectId: "algorithm-adventure-2bbec",
+  storageBucket: "algorithm-adventure-2bbec.firebasestorage.app",
+  messagingSenderId: "117641746509",
+  appId: "1:117641746509:web:fb4ecef6f1fb6ae203a404"
+};
+
+export function getStoredFirebaseConfig(): FirebaseConfigType {
   try {
     const raw = localStorage.getItem(DEFAULT_CONFIG_KEY);
     if (raw) {
@@ -21,16 +30,16 @@ export function getStoredFirebaseConfig(): FirebaseConfigType | null {
   // Check window object from firebase-config.js if defined and not default placeholder
   if (typeof window !== 'undefined' && (window as any).FIREBASE_CONFIG) {
     const cfg = (window as any).FIREBASE_CONFIG;
-    if (cfg && cfg.apiKey && cfg.apiKey !== 'YOUR_API_KEY' && cfg.projectId && cfg.projectId !== 'algorithm-adventure-2bbec') {
+    if (cfg && cfg.apiKey && cfg.apiKey !== 'YOUR_API_KEY' && cfg.projectId) {
       return cfg;
     }
   }
 
-  return null;
+  return DEFAULT_FIREBASE_CONFIG;
 }
 
 export function isFirebaseInitialized(): boolean {
-  return getStoredFirebaseConfig() !== null;
+  return true;
 }
 
 export function saveFirebaseConfig(cfg: FirebaseConfigType) {
@@ -45,44 +54,29 @@ let appInstance: FirebaseApp | null = null;
 let authInstance: Auth | null = null;
 let dbInstance: Firestore | null = null;
 
-export function initFirebase(): { app: FirebaseApp | null; auth: Auth | null; db: Firestore | null; isLive: boolean } {
+export function initFirebase(): { app: FirebaseApp; auth: Auth; db: Firestore; isLive: boolean } {
   const cfg = getStoredFirebaseConfig();
 
-  if (!cfg || !cfg.apiKey || cfg.apiKey === 'YOUR_API_KEY' || !cfg.projectId) {
-    return { app: null, auth: null, db: null, isLive: false };
+  if (!getApps().length) {
+    appInstance = initializeApp(cfg);
+  } else {
+    appInstance = getApps()[0];
   }
+  authInstance = getAuth(appInstance);
+  dbInstance = getFirestore(appInstance);
 
-  try {
-    if (!getApps().length) {
-      appInstance = initializeApp(cfg);
-    } else {
-      appInstance = getApps()[0];
-    }
-    authInstance = getAuth(appInstance);
-    dbInstance = getFirestore(appInstance);
-    return { app: appInstance, auth: authInstance, db: dbInstance, isLive: true };
-  } catch (e) {
-    console.warn('Firebase initialization failed. Falling back to Demo Mode:', e);
-    return { app: null, auth: null, db: null, isLive: false };
-  }
+  return { app: appInstance, auth: authInstance, db: dbInstance, isLive: true };
 }
 
 export interface FirebaseConnectionStatus {
-  status: 'live' | 'demo' | 'error';
+  status: 'live' | 'error';
   message: string;
-  projectId?: string;
+  projectId: string;
 }
 
 export async function testFirebaseConnection(): Promise<FirebaseConnectionStatus> {
-  const { db, isLive } = initFirebase();
+  const { db } = initFirebase();
   const cfg = getStoredFirebaseConfig();
-
-  if (!isLive || !db || !cfg) {
-    return {
-      status: 'demo',
-      message: 'อยู่ในโหมดตัวอย่าง (Demo Mode) - ข้อมูลบันทึกเฉพาะในเครื่องนี้'
-    };
-  }
 
   try {
     // Ping firestore by querying classrooms collection with limit 1
@@ -108,4 +102,5 @@ export async function testFirebaseConnection(): Promise<FirebaseConnectionStatus
     };
   }
 }
+
 
